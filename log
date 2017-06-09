@@ -1,0 +1,50 @@
+[yum install telnet]
+yum install pyodbc unixODBC
+yum install libaio
+rpm -ivh /script/oracle-instantclient12.2-basic-12.2.0.1.0-1.x86_64.rpm
+rpm -ivh /script/oracle-instantclient12.2-odbc-12.2.0.1.0-1.x86_64.rpm
+#yum install python-ldap
+pip install ldap3
+export ORACLE_HOME=usr/lib/oracle/12.2/client64/
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib
+export TNS_ADMIN=/etc/oracle
+export TWO_TASK=//172.18.77.3:15021/listener
+mkdir /etc/oracle
+
+/etc/oracle/tnsnames.ora:
+SID =
+ ( DESCRIPTION =
+  (ADDRESS_LIST =
+    (ADDRESS =
+      (PROTOCOL = TCP)
+      (Host = 172.18.77.3)
+      (Port = 15021)
+    )
+  )
+ (CONNECT_DATA = (SID = SID)
+ )
+)
+
+/etc/odbcinst.ini:
+[oracle]
+Description = Oracle ODBC driver 
+Driver = /usr/lib/oracle/12.2/client64/lib/libsqora.so.12.1
+FileUsage = 1
+Driver Logging = 7
+
+[odbc]
+Trace = No
+Tracefile = /tmp/oracletrace
+ForceTrace = No
+Pooling = No
+DEBUG = 0
+
+/etc/odbc.ini:
+[oracle]
+Driver = oracle
+DSN = odbc
+ServerName = SID
+UserID = PH08.brz
+Password = strenggeheim
+
+
