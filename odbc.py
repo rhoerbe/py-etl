@@ -127,12 +127,15 @@ def main () :
         ( '-o', '--output-file'
         , help    = 'Output file for writing CSV, default is table name'
         )
-    cmd.add_argument \
+    # -t (table) and -T (time) are mutually exclusive: We dump out both
+    # relevant tables if the -T option is given.
+    group = cmd.add_mutually_exclusive_group ()
+    group.add_argument \
         ( '-t', '--table'
         , help    = 'Table name, default=%(default)s'
         , default = 'eventlog_ph'
         )
-    cmd.add_argument \
+    group.add_argument \
         ( '-T', '--time'
         , help    = 'Cut-off time for eventlog, if specified, both the '
                     'eventlog_ph *and* the benutzer_alle_dirxml_v are '
