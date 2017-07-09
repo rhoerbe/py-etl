@@ -9,10 +9,13 @@ class LDAP_Access (object) :
     def __init__ (self, args) :
         self.args   = args
         self.binddn = "cn=%s,ou=auth,o=BMUKK" % args.username
-        self.srv    = Server (self.args.uri)
+        self.srv    = Server (self.args.uri, get_info = 'ALL')
         self.ldcon  = Connection (self.srv, self.binddn, self.args.password)
         self.ldcon.bind ()
         print ("Bound: %s" % self.ldcon.bound)
+        #print (self.ldcon.extend.standard.who_am_i())
+        #print (self.ldcon)
+        print (self.srv.info)
         #print (self.srv.schema)
     # end def __init__
 

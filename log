@@ -5,23 +5,23 @@ rpm -ivh /script/oracle-instantclient12.2-basic-12.2.0.1.0-1.x86_64.rpm
 rpm -ivh /script/oracle-instantclient12.2-odbc-12.2.0.1.0-1.x86_64.rpm
 #yum install python-ldap
 pip install ldap3
-export ORACLE_HOME=usr/lib/oracle/12.2/client64/
+export ORACLE_HOME=usr/lib/oracle/12.2/client64
 export LD_LIBRARY_PATH=$ORACLE_HOME/lib
 export TNS_ADMIN=/etc/oracle
-export TWO_TASK=//172.18.77.3:15021/listener
+export TWO_TASK=//172.18.77.3:1521/listener
 mkdir /etc/oracle
 
 /etc/oracle/tnsnames.ora:
-SID =
+PH08.brz =
  ( DESCRIPTION =
   (ADDRESS_LIST =
     (ADDRESS =
       (PROTOCOL = TCP)
       (Host = 172.18.77.3)
-      (Port = 15021)
+      (Port = 1521)
     )
   )
- (CONNECT_DATA = (SID = SID)
+ (CONNECT_DATA = (SERVICE_NAME = PH08.brz)
  )
 )
 
@@ -43,8 +43,141 @@ DEBUG = 0
 [oracle]
 Driver = oracle
 DSN = odbc
-ServerName = SID
+ServerName = CO_DIRXML
 UserID = PH08.brz
 Password = strenggeheim
 
+isql:
 
+select * from global_name;
+select *from v$version;
+
+SQL> select table_name from user_tables;
++-------------------------------+
+| TABLE_NAME                    |
++-------------------------------+
+| SYNCH_PH_S_DV_SNAPSHOOT_TMP   |
+| EVENTLOG_PH                   |
++-------------------------------+
+SQLRowCount returns -1
+2 rows fetched
+
+help SYNCH_PH_S_DV_SNAPSHOOT_TMP
+lists column names
+
+help
+list tables
+Liefert eine Liste von 3123 Eintraegen, dauert!
+
+Besser:
+select column_name, data_type, data_length, nullable from user_tab_cols where table_name = 'EVENTLOG_PH';
+
++-------------------+-----------+-------------+---------+
+| COLUMN_NAME       | DATA_TYPE | DATA_LENGTH | NULLABLE|
++-------------------+-----------+-------------+---------+
+| RECORD_ID         | NUMBER    | 22          | N       | +
+| TABLE_KEY         | VARCHAR2  | 144         | N       | +
+| STATUS            | CHAR      | 3           | Y       | +
+| EVENT_TYPE        | NUMBER    | 22          | N       | +
+| EVENT_TIME        | DATE      | 7           | N       | +
+| PERPETRATOR       | VARCHAR2  | 96          | Y       | +
+| TABLE_NAME        | VARCHAR2  | 96          | N       | +
+| COLUMN_NAME       | VARCHAR2  | 96          | Y       | +
+| OLD_VALUE         | VARCHAR2  | 240         | Y       | +
+| NEW_VALUE         | VARCHAR2  | 240         | Y       | +
+| SYNCH_ID          | NUMBER    | 22          | Y       | +
+| SYNCH_ONLINE_FLAG | CHAR      | 3           | Y       | +
+| TRANSACTION_FLAG  | CHAR      | 3           | Y       | +
+| READ_TIME         | DATE      | 7           | Y       | +
+| ERROR_MESSAGE     | VARCHAR2  | 4000        | Y       | +
+| ATTEMPT           | NUMBER    | 22          | Y       | +
+| ADMIN_NOTIFY_FLAG | VARCHAR2  | 3           | Y       | +
++-------------------+-----------+-------------+---------+
+
+select column_name, data_type, data_length, nullable from user_tab_cols where table_name = 'BENUTZER_ALLE_DIRXML_V';
+
++-----------------------+-----------+-------------+---------+
+| COLUMN_NAME           | DATA_TYPE | DATA_LENGTH | NULLABLE|
++-----------------------+-----------+-------------+---------+
+| PERSON_NR_OBF         | VARCHAR2  | 4000        | Y       |
+| ST_PERSON_NR_OBF      | VARCHAR2  | 4000        | Y       |
+| ORG_EINHEITEN         | VARCHAR2  | 4000        | Y       | +
+| EMAILADRESSE_B        | VARCHAR2  | 4000        | Y       | +
+| EMAILADRESSE_ST       | VARCHAR2  | 4000        | Y       | +
+| BPK                   | VARCHAR2  | 84          | Y       | +
+| PM_SAP_PERSONALNUMMER | VARCHAR2  | 4000        | Y       |
+| SCHULKENNZAHLEN       | VARCHAR2  | 0           | Y       | +
+| FUNKTIONEN            | VARCHAR2  | 0           | Y       | +
+| PK_UNIQUEID           | NUMBER    | 22          | N       | +
+| VORNAME               | VARCHAR2  | 4000        | Y       | +
+| NACHNAME              | VARCHAR2  | 4000        | Y       | +
+| BENUTZERNAME          | VARCHAR2  | 240         | Y       | +
+| PASSWORT              | VARCHAR2  | 4000        | Y       | +
+| BENUTZERGRUPPEN       | VARCHAR2  | 4000        | Y       |
+| AKTIV_ST_PERSON       | CHAR      | 3           | Y       |
+| AKTIV_A_PERSON        | CHAR      | 3           | Y       |
+| AKTIV_B_PERSON        | CHAR      | 3           | Y       |
+| CHIPID_B              | VARCHAR2  | 150         | Y       |
+| CHIPID_ST             | VARCHAR2  | 150         | Y       |
+| CHIPID_A              | VARCHAR2  | 0           | Y       |
+| MIRFAREID_B           | VARCHAR2  | 150         | Y       |
+| MIRFAREID_ST          | VARCHAR2  | 150         | Y       |
+| MIRFAREID_A           | VARCHAR2  | 0           | Y       |
+| MATRIKELNUMMER        | VARCHAR2  | 4000        | Y       | +
+| ACCOUNT_STATUS_B      | VARCHAR2  | 4000        | Y       |
+| ACCOUNT_STATUS_ST     | VARCHAR2  | 4000        | Y       |
+| ACCOUNT_STATUS_A      | VARCHAR2  | 4000        | Y       |
+| GEBURTSDATUM          | DATE      | 7           | Y       |
+| PERSON_NR             | NUMBER    | 22          | Y       |
+| ST_PERSON_NR          | NUMBER    | 22          | Y       |
+| IDENT_NR              | NUMBER    | 22          | Y       | +
++-----------------------+-----------+-------------+---------+
+
+Data types:
+VARCHAR2
+NUMBER
+CHAR
+DATE
+
+DB ist groß:
+SQL> select count (pk_uniqueid) from BENUTZER_ALLE_DIRXML_V;
++-----------------------------------------+
+| COUNT(PK_UNIQUEID)                      |
++-----------------------------------------+
+| 37678                                   |
++-----------------------------------------+
+
+SQL> select count (record_id) from EVENTLOG_PH;
++-----------------------------------------+
+| COUNT(RECORD_ID)                        |
++-----------------------------------------+
+| 194                                     |
++-----------------------------------------+
+
+
+Limit number of entries:
+select chipid_b from BENUTZER_ALLE_DIRXML_V where rownum < 5;
+
+LDAP
+====
+
+  Naming contexts: 
+    o=PHOinfra
+    o=BMUKK
+    o=BMUKK-QS
+    cn=DriverSet4,ou=IDM,ou=SSVC,o=PHOinfra
+
+
+  dsaName: 
+    cn=BMBFIDMP-FB00V-NDS,ou=FB00V,ou=EDS,o=PHOinfra
+
+TLS_REQCERT allow in /etc/openldap/ldap.conf
+for not checking certificate
+
+ldapsearch -b 'o=PHOinfra' -H ldaps://172.18.81.8:636 -W -D \
+    'cn=rudolf.mader,ou=auth,o=BMUKK' "(objectclass=*)" dn
+ldapsearch -b 'o=BMUKK' -H ldaps://172.18.81.8:636 -W -D \
+    'cn=rudolf.mader,ou=auth,o=BMUKK' "(objectclass=*)" dn
+# Find a specific user
+ldapsearch -b 'o=BMUKK' -H ldaps://172.18.81.8:636 -W -D \
+    'n=rudolf.mader,ou=auth,o=BMUKK' "(phonlineUniqueId=115278)" |less
