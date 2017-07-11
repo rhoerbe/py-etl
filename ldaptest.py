@@ -31,16 +31,16 @@ class LDAP_Access (object) :
         assert r
         assert len (self.ldcon.response) == 1
         yield self.ldcon.response [0]
-        r = self.ldcon.search \
-            ( basedn, filt
-            , search_scope        = LEVEL
-            , dereference_aliases = DEREF_NEVER
-            )
-        if not r :
-            #print (self.ldcon.last_error)
-            raise StopIteration ()
-        for s in sorted (self.ldcon.response, key = lambda x : x ['dn']) :
-            for i in self.iter (s ['dn']) :
+        for entry in sorted \
+            ( self.ldcon.extend.standard.paged_search
+                ( basedn, filt
+                , search_scope        = LEVEL
+                , dereference_aliases = DEREF_NEVER
+                , paged_size          = 500
+                )
+            , key = lambda x : x ['dn']
+            ) :
+            for i in self.iter (entry ['dn']) :
                 yield i
     # end def iter
 
