@@ -48,6 +48,8 @@ class LDAP_Access (object) :
                 )
             , key = lambda x : x ['dn']
             ) :
+            if entry ['dn'] == basedn :
+                continue
             for i in self.iter (entry ['dn']) :
                 yield i
     # end def iter
