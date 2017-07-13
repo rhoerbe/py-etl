@@ -7,6 +7,7 @@ from argparse         import ArgumentParser
 from csv              import writer
 from ldap3            import Server, Connection, SCHEMA, BASE, LEVEL
 from ldap3            import ALL_ATTRIBUTES, DEREF_NEVER
+from ldap3            import MODIFY_REPLACE, MODIFY_DELETE
 from datetime         import datetime
 
 def log (msg) :
@@ -65,8 +66,10 @@ class Namespace (dict) :
 def from_db_date (item) :
     """ Note that phonline stores the only date attribute
         "phonlineGebDatum" as a string!
+        Also note: the seconds always contain a trailing '.0' in the
+        original LDAP tree.
     """
-    return item.strftime ("%Y-%m-%d %H:%M:%S")
+    return item.strftime ("%Y-%m-%d %H:%M:%S") + '.0'
 # end def from_db_date
 
 def from_db_number (item) :
@@ -246,7 +249,7 @@ class ODBC_Connector (object) :
         tbl    = self.table
         fields = self.fields [tbl]
         self.cursor.execute \
-            ('select %s from %s where pk_uniqueid = 115278' % (','.join (fields), self.table))
+            ('select %s from %s' % (','.join (fields), self.table))
         for row in self.cursor :
             self.sync_to_ldap (row, is_new = True)
     # end def initial_load
@@ -285,9 +288,42 @@ class ODBC_Connector (object) :
                     ld_delete [lk] = None
                 else :
                     ld_update [lk] = v
+            assert 'phonlineUniqueId' not in ld_update
+            assert 'phonlineUniqueId' not in ld_delete
+            if not ld_delete and not ld_update :
+                return
             # dn modified, the cn is the rdn!
-            #if 'cn' in ld_update :
-            #    self.ldap.modify_dn (ldrec.cn,
+            dn = ldrec ['dn']
+            if 'cn' in ld_update :
+                cn = 'cn=' + ld_update ['cn']
+                r  = self.ldap.modify_dn (ldrec ['dn'], cn)
+                if not r :
+                    msg = \
+                        ( "Error on LDAP modify_dn: "
+                          "%(description)s: %(message)s"
+                          " (code: %(result)s)"
+                        % self.ldap.result
+                        )
+                    self.log.error (msg)
+                    return msg
+                del ld_update ['cn']
+                dn = cn + ',' + dn.split (',', 1)[-1]
+            if ld_update or ld_delete :
+                changes = {}
+                for k in ld_update :
+                    changes [k] = (MODIFY_REPLACE, [ld_update [k]])
+                for k in ld_delete :
+                    changes [k] = (MODIFY_DELETE, [])
+                r = self.ldap.modify (dn, changes)
+                if not r :
+                    msg = \
+                        ( "Error on LDAP modify: "
+                          "%(description)s: %(message)s"
+                          " (code: %(result)s)"
+                        % self.ldap.result
+                        )
+                    self.log.error (msg)
+                    return msg
         else :
             if not is_new :
                 # Log an error but continue like a normal sync
