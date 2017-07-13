@@ -33,20 +33,29 @@ class LDAP_Access (object) :
             sys.exit (0)
     # end def __init__
 
-    def iter (self, basedn = None) :
-        if basedn is None :
-            basedn = self.args.base_dn
+    def get_item (self, dn) :
+        """ Get single item by dn """
         filt = '(objectclass=*)'
         # Get attributes of current basedn
         r = self.ldcon.search \
-            ( basedn, filt
+            ( dn, filt
             , search_scope        = BASE
             , dereference_aliases = DEREF_NEVER
             , attributes          = ALL_ATTRIBUTES
             )
-        assert r
+        if not r :
+            return None
         assert len (self.ldcon.response) == 1
-        yield self.ldcon.response [0]
+        return self.ldcon.response [0]
+    # end def get_item
+
+    def iter (self, basedn = None) :
+        if basedn is None :
+            basedn = self.args.base_dn
+        r = self.get_item (basedn)
+        assert r
+        yield r
+        filt = '(objectclass=*)'
         for entry in sorted \
             ( self.ldcon.extend.standard.paged_search
                 ( basedn, filt
@@ -85,7 +94,9 @@ def main () :
     cmd = ArgumentParser ()
     cmd.add_argument \
         ( 'action'
-        , help    = 'Action to perform, one of "schema", "compare", "iter"'
+        , help    = 'Action to perform, one of "schema", "compare", '
+                    '"iter", "getdn", note that for getdn the specified '
+                    'base_dn is fetched'
         )
     cmd.add_argument \
         ( "-2", "--second"
@@ -153,6 +164,8 @@ def main () :
     if not args.password and (args.action == 'compare' or args.second) :
         args.password = getpass ("2nd Bind Password: ")
     ld = LDAP_Access (args, second = args.second)
+    if args.action == 'getdn' :
+        print (ld.get_item (args.base_dn))
     if args.action == 'iter' :
         count = 0
         for x in ld.iter () :
