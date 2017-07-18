@@ -21,13 +21,13 @@ class LDAP_Access (object) :
             self.binddn = self.args.bind_dn2
             uri = self.args.uri2
             pw = self.args.password2
-        self.verbose (self.args.uri)
+        self.verbose (self.args.uri, self.binddn)
         self.srv    = Server (uri, get_info = ALL)
         self.ldcon  = Connection (self.srv, self.binddn, pw)
         self.ldcon.bind ()
         self.verbose ("Bound: %s" % self.ldcon.bound)
-        self.verbose (self.ldcon)
-        self.verbose (self.srv.info)
+        self.verbose ("LDCON:", self.ldcon)
+        self.verbose ("Server-info:", self.srv.info)
         if self.args.action == 'schema' :
             print (self.srv.schema)
             sys.exit (0)
@@ -36,6 +36,9 @@ class LDAP_Access (object) :
     def get_item (self, dn) :
         """ Get single item by dn """
         filt = '(objectclass=*)'
+        #if dn.startswith ('cn=') :
+        #    filt = '(%s)' % (dn.split (',', 1) [0])
+        #    print (filt)
         # Get attributes of current basedn
         r = self.ldcon.search \
             ( dn, filt
@@ -55,26 +58,40 @@ class LDAP_Access (object) :
         r = self.get_item (basedn)
         assert r
         yield r
-        filt = '(objectclass=*)'
-        for entry in sorted \
-            ( self.ldcon.extend.standard.paged_search
-                ( basedn, filt
-                , search_scope        = LEVEL
-                , dereference_aliases = DEREF_NEVER
-                , paged_size          = 500
-                )
-            , key = lambda x : x ['dn']
-            ) :
-            if entry ['dn'] == basedn :
-                continue
-            for i in self.iter (entry ['dn']) :
-                yield i
+        # FIXME: Workaround for bug in OpenLDAP: if this is a
+        # leaf-node, it will search the whole database sequentially
+        # for sub-nodes here. So since we know the structure we
+        # don't recurse here.
+        if len (r ['dn'].split (',')) < 4 :
+            filt = '(objectclass=*)'
+            for entry in sorted \
+                ( self.ldcon.extend.standard.paged_search
+                    ( basedn, filt
+                    , search_scope        = LEVEL
+                    , dereference_aliases = DEREF_NEVER
+                    , paged_size          = 500
+                    )
+                , key = lambda x : x ['dn']
+                ) :
+                if entry ['dn'] == basedn :
+                    continue
+                for i in self.iter (entry ['dn']) :
+                    yield i
     # end def iter
 
-    def verbose (self, msg) :
+    def verbose (self, *msg) :
         if self.args.verbose :
-            print (msg)
+            print (*msg)
     # end def verbose
+
+    def __getattr__ (self, name) :
+        """ Delegate to our ldcon, caching variant """
+        if name.startswith ('_') :
+            raise AttributeError (name)
+        r = getattr (self.ldcon, name)
+        setattr (self, name, r)
+        return r
+    # end def __getattr__
 
 # end class LDAP_Access
 
@@ -88,6 +105,8 @@ compare_ignore = set \
      , 'passwordMinimumLength'
      , 'DirXML-ADAliasName'
      , 'nspmDistributionPassword'
+     , 'passwordAllowChange'
+     , 'passwordRequired'
     ))
 
 def main () :
@@ -159,11 +178,13 @@ def main () :
         , action  = "store_true"
         )
     args = cmd.parse_args ()
-    if not args.password and (args.action == 'compare' or not args.second) :
-        args.password = getpass ("1st Bind Password: ")
-    if not args.password and (args.action == 'compare' or args.second) :
-        args.password = getpass ("2nd Bind Password: ")
+    if not args.password  and (args.action == 'compare' or not args.second) :
+        args.password  = getpass ("1st Bind Password: ")
+    if not args.password2 and (args.action == 'compare' or args.second) :
+        args.password2 = getpass ("2nd Bind Password: ")
     ld = LDAP_Access (args, second = args.second)
+    print (args.second)
+    assert ld.bound
     if args.action == 'getdn' :
         print (ld.get_item (args.base_dn))
     if args.action == 'iter' :
@@ -179,6 +200,7 @@ def main () :
         print ("\n\nCount:", count)
     if args.action == 'compare' :
         ld2 = LDAP_Access (args, second = True)
+        assert ld2.bound
         count = 0
         i1 = ld.iter  ()
         i2 = ld2.iter ()
@@ -186,29 +208,37 @@ def main () :
             dn1 = x1 ['dn']
             dn2 = x2 ['dn']
             while dn1 != dn2 :
-                while i1 ['dn'] < i2 ['dn'] :
+                while dn1 < dn2 :
                     print ("Only in lhs: %s" % dn1)
-                    x1 = i1.next ()
-                while i2 ['dn'] < i1 ['dn'] :
+                    x1  = next (i1)
+                    dn1 = x1 ['dn']
+                while dn2 < dn1 :
                     print ("Only in rhs: %s" % dn2)
-                    x2 = i2.next ()
-                x1a = set (x1 ['attributes'].keys ()) - compare_ignore
-                x2a = set (x2 ['attributes'].keys ()) - compare_ignore
-                if x1a - x2a :
+                    x2  = next (i2)
+                    dn2 = x2 ['dn']
+            x1a = set (x1 ['attributes'].keys ()) - compare_ignore
+            x2a = set (x2 ['attributes'].keys ()) - compare_ignore
+            if x1a - x2a :
+                print \
+                    ( "Attributes of %s only in lhs: %s"
+                    % (dn1, sorted (list (x1a - x2a)))
+                    )
+            if x2a - x1a :
+                print \
+                    ( "Attributes of %s only in rhs: %s"
+                    % (dn2, sorted (list (x2a - x1a)))
+                    )
+            for a in sorted (x1a & x2a) :
+                v1 = x1 ['attributes'][a]
+                v2 = x2 ['attributes'][a]
+                if v1 != v2 :
+                    rv1 = repr (v1)
+                    rv2 = repr (v2)
+                    rdn = repr (dn1)
                     print \
-                        ( "Attributes of %s only in lhs: %s"
-                        % (dn1, sorted (list (x1a - x2a)))
+                        ( "Differs: %s (%s vs %s)"
+                        % (rdn, rv1, rv2)
                         )
-                if x2a - x1a :
-                    print \
-                        ( "Attributes of %s only in rhs: %s"
-                        % (dn2, sorted (list (x2a - x1a)))
-                        )
-                for a in sorted (x1a & x2a) :
-                    v1 = x1 ['attributes'][a]
-                    v2 = x2 ['attributes'][a]
-                    if v1 != v2 :
-                        print ("Differs: %s (%r vs %r)" % (dn1, v1, v2))
             print ("%s\r" % count, end = '')
             sys.stdout.flush ()
             count += 1
