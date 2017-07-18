@@ -30,7 +30,7 @@ class LDAP_Access (object) :
 
     def get_entry (self, pk_uniqueid) :
         r = self.ldcon.search \
-            ( self.args.base_dn, '(phonlineUniqueId=%s)' % pk_uniqueid
+            ( self.dn, '(phonlineUniqueId=%s)' % pk_uniqueid
             , search_scope = LEVEL
             , attributes   = ALL_ATTRIBUTES
             )
@@ -42,6 +42,10 @@ class LDAP_Access (object) :
                     )
             return self.ldcon.response [0]
     # end def get_entry
+
+    def set_dn (self, dn) :
+        self.dn = dn
+    # end def set_dn
 
     def __getattr__ (self, name) :
         """ Delegate to our ldcon, caching variant """
@@ -179,16 +183,15 @@ class ODBC_Connector (object) :
         )
 
     def __init__ (self, args) :
-        self.cnx    = pyodbc.connect (DSN = 'oracle')
-        self.cursor = self.cnx.cursor ()
         self.args   = args
         self.table  = args.table.lower ()
         if self.args.action != 'csv' :
             self.ldap  = LDAP_Access (self.args)
             self.table = 'benutzer_alle_dirxml_v'
-       # FIXME: Poor-mans logger for now
+        # FIXME: Poor-mans logger for now
         self.log = Namespace ()
         self.log ['debug'] = self.log ['error'] = log
+        self.get_passwords ()
     # end def __init__
 
     def action (self) :
@@ -206,6 +209,8 @@ class ODBC_Connector (object) :
             and then select the relevant rows from the
             benutzer_alle_dirxml_v table.
         """
+        self.cnx    = pyodbc.connect (DSN = self.args.databases [0])
+        self.cursor = self.cnx.cursor ()
         fields = self.fields [self.table]
         where  = ''
         fn     = self.args.output_file
@@ -245,13 +250,33 @@ class ODBC_Connector (object) :
                     w.writerow (row)
     # end def as_csv
 
+    def get_passwords (self) :
+        self.passwords = dict ()
+        with open ('/etc/passwords', 'r') as f :
+            for line in f :
+                line = line.strip ()
+                if line.startswith ('DATABASE_PASSWORDS') :
+                    pws = line.split ('=', 1)[-1].strip ()
+                    for entry in pws.split (',') :
+                        db, pw = (x.strip () for x in entry.split (':', 1))
+                        self.passwords [db] = pw
+    # end def get_passwords
+
     def initial_load (self) :
-        tbl    = self.table
-        fields = self.fields [tbl]
-        self.cursor.execute \
-            ('select %s from %s' % (','.join (fields), self.table))
-        for row in self.cursor :
-            self.sync_to_ldap (row, is_new = True)
+        for dn, db in zip (self.args.base_dn, self.args.databases) :
+            self.db = db
+            self.dn = dn
+            self.ldap.set_dn (dn)
+            print (db)
+            self.cnx    = pyodbc.connect (DSN = db)
+            self.cursor = self.cnx.cursor ()
+            tbl         = self.table
+            fields      = self.fields [tbl]
+            self.cursor.execute \
+                ('select %s from %s' % (','.join (fields), self.table))
+            for n, row in enumerate (self.cursor) :
+                self.log.debug (n)
+                self.sync_to_ldap (row, is_new = True)
     # end def initial_load
 
     def sync_to_ldap (self, row, is_new = False) :
@@ -339,7 +364,7 @@ class ODBC_Connector (object) :
                     ld_update [lk] = v
             ld_update ['objectClass'] = ['inetOrgPerson', 'phonlinePerson']
             r = self.ldap.add \
-                ( ('cn=%s,' % ld_update ['cn']) + self.args.base_dn
+                ( ('cn=%s,' % ld_update ['cn']) + self.dn
                 , attributes = ld_update
                 )
             if not r :
@@ -367,16 +392,26 @@ def main () :
         ( 'action'
         , help    = 'Action to perform, one of "csv", "initial_load", "etl"'
         )
+    default_bind_dn = os.environ.get ('LDAP_BIND_DN', 'cn=admin,o=BMUKK')
     cmd.add_argument \
         ( "-B", "--bind-dn"
         , help    = "Bind-DN, default=%(default)s"
-        , default = "cn=admin,o=BMUKK"
+        , default = default_bind_dn
         )
-    # FIXME: We want some magic for specifying instance automatically
+    cmd.add_argument \
+        ( "-c", "--database-connect"
+        , dest    = 'databases'
+        , help    = "Database name for connecting usually configured via "
+                    "environment, will use *all* databases specified"
+        , action  = 'append'
+        , default = []
+        )
     cmd.add_argument \
         ( "-d", "--base-dn"
-        , help    = "Base-DN for starting search, default=%(default)s"
-        , default = 'ou=user,ou=ph08,o=BMUKK'
+        , help    = "Base-DN for starting search, usually configured via "
+                    "environment, will use *all* databases specified"
+        , action  = 'append'
+        , default = []
         )
     cmd.add_argument \
         ( '-D', '--delimiter'
@@ -387,10 +422,16 @@ def main () :
         ( '-o', '--output-file'
         , help    = 'Output file for writing CSV, default is table name'
         )
+    # get default_pw from /etc/passwords LDAP_PASSWORD entry
+    ldap_pw = 'changeme'
+    with open ('/etc/passwords', 'r') as f :
+        for line in f :
+            if line.startswith ('LDAP_PASSWORD') :
+                ldap_pw = line.split ('=', 1) [-1].strip ()
     cmd.add_argument \
         ( "-P", "--password"
-        , help    = "Password for binding"
-        , default = 'changeit'
+        , help    = "Password(s) for binding to LDAP"
+        , default = ldap_pw
         )
     # Compute the default ldap server from environment of container
     # In production we'll have an argument here
@@ -415,6 +456,19 @@ def main () :
                     'dumped but only records newer than the given time.'
         )
     args = cmd.parse_args ()
+    if not args.base_dn or not args.databases :
+        args.base_dn   = []
+        args.databases = []
+        for inst in os.environ ['DATABASE_INSTANCES'].split (',') :
+            db, dummy = (x.strip () for x in inst.split (':'))
+            dn = ','.join \
+                (( os.environ ['LDAP_USER_OU']
+                ,  'ou=%s' % db
+                ,  os.environ ['LDAP_BASE_DN']
+                ))
+            args.base_dn.append   (dn)
+            args.databases.append (db)
+
     odbc = ODBC_Connector (args)
     odbc.action ()
 # end def main
