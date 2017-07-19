@@ -391,6 +391,7 @@ def main () :
     cmd.add_argument \
         ( 'action'
         , help    = 'Action to perform, one of "csv", "initial_load", "etl"'
+        , default = 'etl'
         )
     default_bind_dn = os.environ.get ('LDAP_BIND_DN', 'cn=admin,o=BMUKK')
     cmd.add_argument \
