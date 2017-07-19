@@ -82,6 +82,15 @@ def from_db_number (item) :
     return str (int (item))
 # end def from_db_number
 
+def from_multi (item) :
+    """ Return array for an item containing several fields separated by
+        semicolon in the database
+    """
+    if item is None :
+        return item
+    return item.split (';')
+# end def from_multi
+
 class ODBC_Connector (object) :
 
     fields = dict \
@@ -175,11 +184,13 @@ class ODBC_Connector (object) :
         )
 
     data_conversion = dict \
-        ( geburtsdatum = from_db_date
-        , ident_nr     = from_db_number
-        , person_nr    = from_db_number
-        , st_person_nr = from_db_number
-        , pk_uniqueid  = from_db_number
+        ( geburtsdatum    = from_db_date
+        , ident_nr        = from_db_number
+        , person_nr       = from_db_number
+        , st_person_nr    = from_db_number
+        , pk_uniqueid     = from_db_number
+        , funktionen      = from_multi
+        , schulkennzahlen = from_multi
         )
 
     def __init__ (self, args) :
@@ -391,7 +402,6 @@ def main () :
     cmd.add_argument \
         ( 'action'
         , help    = 'Action to perform, one of "csv", "initial_load", "etl"'
-        , default = 'etl'
         )
     default_bind_dn = os.environ.get ('LDAP_BIND_DN', 'cn=admin,o=BMUKK')
     cmd.add_argument \
