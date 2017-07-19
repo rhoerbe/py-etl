@@ -9,16 +9,55 @@ import os
 
 class LDAP_Access (object) :
 
+    attributes = \
+        ( 'cn'
+        , 'nspmDistributionPassword'
+        , 'givenName'
+        , 'phonlineAccStBediensteter'
+        , 'phonlineAccStStudent'
+        , 'phonlineAccStWeiterbildung'
+        , 'phonlineBediensteterAktiv'
+        , 'phonlineBenutzergruppe'
+        , 'phonlineBPK'
+        , 'phonlineChipIDBediensteter'
+        , 'phonlineChipIDStudent'
+        , 'phonlineChipIDWeiterbildung'
+        , 'phonlineEmailBediensteter'
+        , 'phonlineEmailStudent'
+        , 'phonlineFunktionen'
+        , 'phonlineGebDatum'
+        , 'phonlineIdentNr'
+        , 'phonlineMatrikelnummer'
+        , 'phonlineMirfareIDBediensteter'
+        , 'phonlineMirfareIDStudent'
+        , 'phonlineMirfareIDWeiterbildung'
+        , 'phonlineOrgEinheiten'
+        , 'phonlinePersonNr'
+        , 'phonlinePersonNrOBF'
+        , 'phonlinePersonNrOBFStudent'
+        , 'phonlinePersonNrStudent'
+        , 'phonlineSapPersnr'
+        , 'phonlineSchulkennzahl'
+        , 'phonlineSchulkennzahlen'
+        , 'phonlineStudentAktiv'
+        , 'phonlineUniqueId'
+        , 'phonlineWeiterbildungAktiv'
+        , 'sn'
+        , 'uid'
+        )
+
     def __init__ (self, args, second = False) :
         self.args   = args
         if '%s' in self.args.bind_dn :
             self.binddn = self.args.bind_dn % args.username
         else :
             self.binddn = self.args.bind_dn
+        self.basedn = self.args.base_dn
         uri = self.args.uri
         pw  = self.args.password
         if second :
             self.binddn = self.args.bind_dn2
+            self.basedn = self.args.base_dn2
             uri = self.args.uri2
             pw = self.args.password2
         self.verbose (self.args.uri, self.binddn)
@@ -45,6 +84,7 @@ class LDAP_Access (object) :
             , search_scope        = BASE
             , dereference_aliases = DEREF_NEVER
             , attributes          = ALL_ATTRIBUTES
+            #, attributes          = self.attributes
             )
         if not r :
             return None
@@ -54,8 +94,10 @@ class LDAP_Access (object) :
 
     def iter (self, basedn = None) :
         if basedn is None :
-            basedn = self.args.base_dn
+            basedn = self.basedn
         r = self.get_item (basedn)
+        if not r :
+            print (basedn)
         assert r
         yield r
         # FIXME: Workaround for bug in OpenLDAP: if this is a
@@ -64,20 +106,27 @@ class LDAP_Access (object) :
         # don't recurse here.
         if len (r ['dn'].split (',')) < 4 :
             filt = '(objectclass=*)'
-            for entry in sorted \
-                ( self.ldcon.extend.standard.paged_search
+            dns = set \
+                ( x ['dn'] for x in self.ldcon.extend.standard.paged_search
                     ( basedn, filt
                     , search_scope        = LEVEL
                     , dereference_aliases = DEREF_NEVER
                     , paged_size          = 500
+                    , generator           = False
                     )
-                , key = lambda x : x ['dn']
-                ) :
-                if entry ['dn'] == basedn :
+                )
+            for dn in sorted (dns, key = lambda x : x.lower ()) :
+                if dn == basedn :
                     continue
-                for i in self.iter (entry ['dn']) :
+                for i in self.iter (dn) :
                     yield i
     # end def iter
+
+    def short_dn (self, dn) :
+        assert dn.endswith (self.basedn)
+        dn = dn [:len (dn) - len (self.basedn)].lower ()
+        return dn
+    # end def short_dn
 
     def verbose (self, *msg) :
         if self.args.verbose :
@@ -127,7 +176,7 @@ def main () :
         , dest    = "bind_dn"
         , help    = "Bind-DN, default=%(default)s, "
                     "Username is put into bind-dn at %%s location"
-        , default = "cn=%s,ou=auth,o=BMUKK"
+        , default = "cn=%s,ou=auth,o=BMUKK-QS"
         )
     cmd.add_argument \
         ( "--bind-dn2"
@@ -139,6 +188,12 @@ def main () :
         ( "-d", "--base-dn"
         , dest    = "base_dn"
         , help    = "Base-DN for starting search, default=%(default)s"
+        , default = 'ou=phq08,o=BMUKK-QS'
+        )
+    cmd.add_argument \
+        ( "--base-dn2"
+        , dest    = "base_dn2"
+        , help    = "Base-DN 2 for starting search, default=%(default)s"
         , default = 'ou=ph08,o=BMUKK'
         )
     cmd.add_argument \
@@ -183,14 +238,14 @@ def main () :
     if not args.password2 and (args.action == 'compare' or args.second) :
         args.password2 = getpass ("2nd Bind Password: ")
     ld = LDAP_Access (args, second = args.second)
-    print (args.second)
+    #print (args.second)
     assert ld.bound
     if args.action == 'getdn' :
         print (ld.get_item (args.base_dn))
     if args.action == 'iter' :
         count = 0
         for x in ld.iter () :
-            if x ['dn'].endswith (',ou=user,ou=ph08,o=BMUKK') :
+            if x ['dn'].endswith (',ou=user,ou=ph08,o=BMUKK-QS') :
                 if count == 5 :
                     print (x)
                 count += 1
@@ -204,44 +259,47 @@ def main () :
         count = 0
         i1 = ld.iter  ()
         i2 = ld2.iter ()
-        for x1, x2 in zip (i1, i2) :
-            dn1 = x1 ['dn']
-            dn2 = x2 ['dn']
+        x1 = next (i1)
+        x2 = next (i2)
+        while (True) :
+            dn1 = ld.short_dn  (x1 ['dn'])
+            dn2 = ld2.short_dn (x2 ['dn'])
+
             while dn1 != dn2 :
+                #print ("DNs: %s %s" % (dn1, dn2))
                 while dn1 < dn2 :
-                    print ("Only in lhs: %s" % dn1)
+                    print ("Only in lhs: %s" % x1 ['dn'])
                     x1  = next (i1)
-                    dn1 = x1 ['dn']
+                    dn1 = ld.short_dn  (x1 ['dn'])
                 while dn2 < dn1 :
-                    print ("Only in rhs: %s" % dn2)
+                    print ("Only in rhs: %s" % x2 ['dn'])
                     x2  = next (i2)
-                    dn2 = x2 ['dn']
+                    dn2 = ld2.short_dn (x2 ['dn'])
             x1a = set (x1 ['attributes'].keys ()) - compare_ignore
             x2a = set (x2 ['attributes'].keys ()) - compare_ignore
             if x1a - x2a :
                 print \
                     ( "Attributes of %s only in lhs: %s"
-                    % (dn1, sorted (list (x1a - x2a)))
+                    % (x1 ['dn'], sorted (list (x1a - x2a)))
                     )
             if x2a - x1a :
                 print \
                     ( "Attributes of %s only in rhs: %s"
-                    % (dn2, sorted (list (x2a - x1a)))
+                    % (x2 ['dn'], sorted (list (x2a - x1a)))
                     )
             for a in sorted (x1a & x2a) :
                 v1 = x1 ['attributes'][a]
                 v2 = x2 ['attributes'][a]
                 if v1 != v2 :
-                    rv1 = repr (v1)
-                    rv2 = repr (v2)
-                    rdn = repr (dn1)
                     print \
-                        ( "Differs: %s (%s vs %s)"
-                        % (rdn, rv1, rv2)
+                        ( "Differs: %s %s: (%s vs %s)"
+                        % (x1 ['dn'], a, repr (v1), repr (v2))
                         )
-            print ("%s\r" % count, end = '')
+            #print ("%s\r" % count, end = '')
             sys.stdout.flush ()
             count += 1
+            x1 = next (i1)
+            x2 = next (i2)
 # end def main
 
 if __name__ == '__main__' :

@@ -174,10 +174,11 @@ LDAP
 TLS_REQCERT allow in /etc/openldap/ldap.conf
 for not checking certificate
 
-ldapsearch -b 'o=PHOinfra' -H ldaps://172.18.81.8:636 -W -D \
-    'cn=rudolf.mader,ou=auth,o=BMUKK' "(objectclass=*)" dn
-ldapsearch -b 'o=BMUKK' -H ldaps://172.18.81.8:636 -W -D \
-    'cn=rudolf.mader,ou=auth,o=BMUKK' "(objectclass=*)" dn
+ldapsearch -b 'o=BMUKK-QS' -H ldaps://172.18.81.8:636 -W -D \
+    'cn=rudolf.mader,ou=auth,o=BMUKK-QS' "(objectclass=*)" dn
+
 # Find a specific user
-ldapsearch -b 'o=BMUKK' -H ldaps://172.18.81.8:636 -W -D \
-    'n=rudolf.mader,ou=auth,o=BMUKK' "(phonlineUniqueId=115278)" |less
+ldapsearch -b 'o=BMUKK-QS' -H ldaps://172.18.81.8:636 -W -D \
+    'cn=rudolf.mader,ou=auth,o=BMUKK-QS' "(phonlineUniqueId=115278)" |less
+ldapsearch -b 'o=BMUKK-QS' -H ldaps://172.18.81.8:636 -W -D \
+    'cn=rudolf.mader,ou=auth,o=BMUKK-QS' "(cn=AAAAA_nopw)"
