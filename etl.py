@@ -347,7 +347,10 @@ class ODBC_Connector (object) :
             if ld_update or ld_delete :
                 changes = {}
                 for k in ld_update :
-                    changes [k] = (MODIFY_REPLACE, [ld_update [k]])
+                    if isinstance (ld_update [k], type ([])) :
+                        changes [k] = (MODIFY_REPLACE, ld_update [k])
+                    else :
+                        changes [k] = (MODIFY_REPLACE, [ld_update [k]])
                 for k in ld_delete :
                     changes [k] = (MODIFY_DELETE, [])
                 r = self.ldap.modify (dn, changes)
