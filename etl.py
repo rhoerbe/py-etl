@@ -1,13 +1,14 @@
 #!/usr/bin/python3
 
 import os
+import sys
 import pyodbc
 
 from argparse         import ArgumentParser
 from csv              import writer
 from ldap3            import Server, Connection, SCHEMA, BASE, LEVEL
 from ldap3            import ALL_ATTRIBUTES, DEREF_NEVER
-from ldap3            import MODIFY_REPLACE, MODIFY_DELETE
+from ldap3            import MODIFY_REPLACE, MODIFY_DELETE, MODIFY_ADD
 from datetime         import datetime
 
 def log (msg) :
@@ -19,14 +20,39 @@ class LDAP_Access (object) :
 
     def __init__ (self, args) :
         self.args  = args
+        # FIXME: Poor-mans logger for now
+        self.log = Namespace ()
+        self.log ['debug'] = self.log ['error'] = log
+
         self.srv   = Server (self.args.uri, get_info = SCHEMA)
         self.ldcon = Connection \
             (self.srv, self.args.bind_dn, self.args.password)
         self.ldcon.bind ()
-       # FIXME: Poor-mans logger for now
-        self.log = Namespace ()
-        self.log ['debug'] = self.log ['error'] = log
+        if not self.ldcon.bound :
+            msg = \
+                ( "Error on LDAP bind: %(description)s: %(message)s"
+                  " (code: %(result)s)"
+                % self.ldcon.result
+                )
+            self.log.error (msg)
+            sys.exit (23)
     # end def __init__
+
+    def get_by_dn (self, dn, base_dn = None) :
+        """ Get entry by dn
+        """
+        if base_dn is None :
+            base_dn = self.dn
+        r = self.ldcon.search \
+            ( dn, '(objectClass=*)'
+            , search_scope = BASE
+            , attributes   = ALL_ATTRIBUTES
+            )
+        if r :
+            if len (self.ldcon.response) != 1 :
+                self.log.error ("Got more than one record with dn %s" % dn)
+            return self.ldcon.response [0]
+    # end def get_by_dn
 
     def get_entry (self, pk_uniqueid) :
         r = self.ldcon.search \
@@ -261,6 +287,42 @@ class ODBC_Connector (object) :
                     w.writerow (row)
     # end def as_csv
 
+    def generate_initial_tree (self) :
+        """ Check if initial tree exists, generate if non-existing
+        """
+        top = None
+        for dn in self.args.base_dn :
+            dnparts = dn.split (',')
+            bdn = ''
+            for dn in reversed (dnparts) :
+                if top is None :
+                    top = dn
+                if bdn :
+                    bdn = ','.join ((dn, bdn))
+                else :
+                    bdn = dn
+                entry = self.ldap.get_by_dn (bdn, base_dn = top)
+                k, v  = dn.split ('=', 1)
+                if entry :
+                    assert entry ['attributes'][k] in (v, [v])
+                    continue
+                d = {k : v}
+                if k == 'o' :
+                    d ['objectClass'] = 'Organization'
+                else :
+                    d ['objectClass'] = 'organizationalUnit'
+                r = self.ldap.add (bdn, attributes = d)
+                if not r :
+                    msg = \
+                        ( "Error on LDAP add: "
+                          "%(description)s: %(message)s"
+                          " (code: %(result)s)"
+                        % self.ldap.result
+                        )
+                    self.log.error (msg)
+                    self.log.error ("DN: %s, Attributes were: %s" % (bdn, d))
+    # end def generate_initial_tree
+
     def get_passwords (self) :
         self.passwords = dict ()
         with open ('/etc/passwords', 'r') as f :
@@ -274,6 +336,7 @@ class ODBC_Connector (object) :
     # end def get_passwords
 
     def initial_load (self) :
+        self.generate_initial_tree ()
         for dn, db in zip (self.args.base_dn, self.args.databases) :
             self.db = db
             self.dn = dn
