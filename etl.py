@@ -447,9 +447,7 @@ def main () :
         , help    = "Password(s) for binding to LDAP"
         , default = ldap_pw
         )
-    # Compute the default ldap server from environment of container
-    # In production we'll have an argument here
-    default_ldap = os.environ.get ('8389_PORT').replace ('tcp', 'ldap')
+    default_ldap = os.environ.get ('LDAP_URI', 'ldap://06openldap:8389')
     cmd.add_argument \
         ( '-u', '--uri'
         , help    = "LDAP uri, default=%(default)s"
