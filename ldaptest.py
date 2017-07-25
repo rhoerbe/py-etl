@@ -176,7 +176,7 @@ def main () :
         , dest    = "bind_dn"
         , help    = "Bind-DN, default=%(default)s, "
                     "Username is put into bind-dn at %%s location"
-        , default = "cn=%s,ou=auth,o=BMUKK-QS"
+        , default = "cn=%s,ou=ssvc,o=phoinfra"
         )
     cmd.add_argument \
         ( "--bind-dn2"
@@ -211,6 +211,7 @@ def main () :
         ( "-U", "--username"
         , dest    = "username"
         , help    = "Username in bind-dn"
+        , default = "rschlatterbeck"
         )
     cmd.add_argument \
         ( "-u", "--uri"
