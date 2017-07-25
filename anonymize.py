@@ -35,19 +35,19 @@ class Anonymizer (object) :
 
     #                              random range                float
     randnums = dict \
-        ( PM_SAP_PERSONALNUMMER = (iter (Randnum (1111111, 99999999)),  False)
-        , PERSON_NR             = (iter (Randnum (11111, 999999)),      True)
-        , ST_PERSON_NR          = (iter (Randnum (11111, 999999)),      True)
-        , IDENT_NR              = (iter (Randnum (11111, 999999)),      True)
-        , MATRIKELNUMMER        = (iter (Randnum (11111111, 99999999)), False)
+        ( pm_sap_personalnummer = (iter (Randnum (1111111, 99999999)),  False)
+        , person_nr             = (iter (Randnum (11111, 999999)),      True)
+        , st_person_nr          = (iter (Randnum (11111, 999999)),      True)
+        , ident_nr              = (iter (Randnum (11111, 999999)),      True)
+        , matrikelnummer        = (iter (Randnum (11111111, 99999999)), False)
         )
 
     hexnums = dict \
-        ( PERSON_NR_OBF    = 8
-        , ST_PERSON_NR_OBF = 8
-        , MIRFAREID_B      = 4
-        , MIRFAREID_ST     = 4
-        , MIRFAREID_A      = 4
+        ( person_nr_obf    = 8
+        , st_person_nr_obf = 8
+        , mirfareid_b      = 4
+        , mirfareid_st     = 4
+        , mirfareid_a      = 4
         )
 
     def __init__ (self) :
@@ -96,12 +96,12 @@ class Anonymizer (object) :
     # end def set
 
     def _anonymize (self, d, wr) :
-        self.ui = ui = d ['PK_UNIQUEID']
+        self.ui = ui = d ['pk_uniqueid']
         if ui not in self.values :
             self.values [ui] = {}
-        for k in 'VORNAME', 'NACHNAME' :
+        for k in 'vorname', 'nachname' :
             self.set (d, k, self.randname (len (d [k])))
-        for k in 'EMAILADRESSE_B', 'EMAILADRESSE_ST' :
+        for k in 'emailadresse_b', 'emailadresse_st' :
             if d [k] :
                 if '@' in d [k] :
                     email, domain = d [k].split ('@')
@@ -110,10 +110,10 @@ class Anonymizer (object) :
                     domain = 'example.com'
                 v = self.randascii (len (email)) + '@' + domain
                 self.set (d, k, v)
-        k = 'BENUTZERNAME'
+        k = 'benutzername'
         if d [k] :
             np = []
-            for k2 in 'VORNAME', 'NACHNAME' :
+            for k2 in 'vorname', 'nachname' :
                 np.append \
                     (''.join (self.textmap.get (x, x).lower ()
                               for x in d [k2]
@@ -123,10 +123,10 @@ class Anonymizer (object) :
             np.append (str (self.usercount))
             self.usercount += 1
             self.set (d, k, '.'.join (np))
-        self.set (d, 'PASSWORT', self.randpw (len (d ['PASSWORT'])))
+        self.set (d, 'passwort', self.randpw (len (d ['passwort'])))
         self.set \
-            (d, 'BPK', base64.b64encode (self.randstr (20)).decode ('ascii'))
-        k = 'GEBURTSDATUM'
+            (d, 'bpk', base64.b64encode (self.randstr (20)).decode ('ascii'))
+        k = 'geburtsdatum'
         if d [k] :
             d1, d2 = d [k].split (' ')
             y, m, day = d1.split ('-')
