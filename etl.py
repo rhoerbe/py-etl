@@ -458,7 +458,6 @@ class ODBC_Connector (object) :
                     )
                 self.log.error (msg)
                 return msg
-
     # end def sync_to_ldap
 
     def to_ldap (self, item, dbkey) :
