@@ -361,8 +361,8 @@ class ODBC_Connector (object) :
             want to put the error message into some table in the
             database.
         """
-        timestamp = LdapTimeStamp(datetime.now(pytz.utc))
-        etl_ts = timestamp.as_generalized_time()
+        timestamp = LdapTimeStamp (datetime.now (pytz.utc))
+        etl_ts = timestamp.as_generalized_time ()
         tbl = self.table
         rw  = Namespace ((k, row [i]) for i, k in enumerate (self.fields [tbl]))
         if not rw.pk_uniqueid :
@@ -444,7 +444,8 @@ class ODBC_Connector (object) :
                 v  = self.to_ldap (rw [k], k)
                 if v is not None :
                     ld_update [lk] = v
-            ld_update ['objectClass'] = ['inetOrgPerson', 'phonlinePerson','idnSyncstat']
+            ld_update ['objectClass'] = \
+                ['inetOrgPerson', 'phonlinePerson','idnSyncstat']
             ld_update ['etlTimestamp'] = etl_ts
             r = self.ldap.add \
                 ( ('cn=%s,' % ld_update ['cn']) + self.dn
