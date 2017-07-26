@@ -3,6 +3,7 @@
 import os
 import sys
 import pyodbc
+import pytz
 
 from argparse         import ArgumentParser
 from csv              import writer
@@ -10,6 +11,7 @@ from ldap3            import Server, Connection, SCHEMA, BASE, LEVEL
 from ldap3            import ALL_ATTRIBUTES, DEREF_NEVER
 from ldap3            import MODIFY_REPLACE, MODIFY_DELETE, MODIFY_ADD
 from datetime         import datetime
+from ldaptimestamp    import LdapTimeStamp
 
 def log (msg) :
     """ FIXME: We want real logging someday """
@@ -353,12 +355,15 @@ class ODBC_Connector (object) :
                 self.sync_to_ldap (row, is_new = True)
     # end def initial_load
 
-    def sync_to_ldap (self, row, is_new = False) :
+    def sync_to_ldap (self, row, is_new = False, timestamp=None) :
         """ Sync a single record to LDAP. We return an error message if
             something goes wrong (and log the error). The caller might
             want to put the error message into some table in the
             database.
         """
+        if not timestamp:
+            timestamp = LdapTimeStamp(datetime.now(pytz.utc))
+        etl_ts = timestamp.as_generalized_time()
         tbl = self.table
         rw  = Namespace ((k, row [i]) for i, k in enumerate (self.fields [tbl]))
         if not rw.pk_uniqueid :
@@ -391,6 +396,7 @@ class ODBC_Connector (object) :
             assert 'phonlineUniqueId' not in ld_delete
             if not ld_delete and not ld_update :
                 return
+            ld_update ['etlTimestamp'] = etl_ts
             # dn modified, the cn is the rdn!
             dn = ldrec ['dn']
             if 'cn' in ld_update :
@@ -440,6 +446,7 @@ class ODBC_Connector (object) :
                 if v is not None :
                     ld_update [lk] = v
             ld_update ['objectClass'] = ['inetOrgPerson', 'phonlinePerson','idnSyncstat']
+            ld_update ['etlTimestamp'] = etl_ts
             r = self.ldap.add \
                 ( ('cn=%s,' % ld_update ['cn']) + self.dn
                 , attributes = ld_update
@@ -452,6 +459,7 @@ class ODBC_Connector (object) :
                     )
                 self.log.error (msg)
                 return msg
+
     # end def sync_to_ldap
 
     def to_ldap (self, item, dbkey) :
