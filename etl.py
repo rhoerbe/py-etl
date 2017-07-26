@@ -439,7 +439,7 @@ class ODBC_Connector (object) :
                 v  = self.to_ldap (rw [k], k)
                 if v is not None :
                     ld_update [lk] = v
-            ld_update ['objectClass'] = ['inetOrgPerson', 'phonlinePerson']
+            ld_update ['objectClass'] = ['inetOrgPerson', 'phonlinePerson','idnSyncstat']
             r = self.ldap.add \
                 ( ('cn=%s,' % ld_update ['cn']) + self.dn
                 , attributes = ld_update
