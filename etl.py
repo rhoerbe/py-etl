@@ -355,14 +355,13 @@ class ODBC_Connector (object) :
                 self.sync_to_ldap (row, is_new = True)
     # end def initial_load
 
-    def sync_to_ldap (self, row, is_new = False, timestamp=None) :
+    def sync_to_ldap (self, row, is_new = False) :
         """ Sync a single record to LDAP. We return an error message if
             something goes wrong (and log the error). The caller might
             want to put the error message into some table in the
             database.
         """
-        if not timestamp:
-            timestamp = LdapTimeStamp(datetime.now(pytz.utc))
+        timestamp = LdapTimeStamp(datetime.now(pytz.utc))
         etl_ts = timestamp.as_generalized_time()
         tbl = self.table
         rw  = Namespace ((k, row [i]) for i, k in enumerate (self.fields [tbl]))
