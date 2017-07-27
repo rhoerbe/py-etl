@@ -1,0 +1,3 @@
+record_id;table_key;status;event_type;event_time;perpetrator;table_name;column_name;old_value;new_value;synch_id;synch_online_flag;transaction_flag;read_time;error_message;attempt;admin_notify_flag
+1000003330147;pk_uniqueid=4712;N;6;2017-07-11 10:29:24;CO_INSTALL;benutzer_alle_dirxml_v;;;;268693.0;N;N;;;1.0;N
+1000003330148;pk_uniqueid=4712;N;6;2017-07-11 10:29:24;CO_INSTALL;benutzer_alle_dirxml_v;;;;268693.0;N;N;;;1.0;N
