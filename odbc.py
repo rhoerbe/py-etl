@@ -63,7 +63,7 @@ class ODBC_Connector (object) :
         )
 
     def __init__ (self, args) :
-        self.cnx    = pyodbc.connect (DSN = 'oracle')
+        self.cnx    = pyodbc.connect (DSN = args.database)
         self.cursor = self.cnx.cursor ()
         self.args   = args
         self.table  = args.table.lower ()
@@ -97,7 +97,8 @@ class ODBC_Connector (object) :
                 )
             for row in self.cursor :
                 w.writerow (row)
-                ids.append (row [1].split ('=') [1])
+                if self.args.time :
+                    ids.append (row [1].split ('=') [1])
         if self.args.time and ids :
             tbl = 'benutzer_alle_dirxml_v'
             fn  = tbl + '.' + self.args.time.replace (' ', '.') + '.csv'
@@ -118,6 +119,11 @@ class ODBC_Connector (object) :
 
 def main () :
     cmd = ArgumentParser ()
+    cmd.add_argument \
+        ( '-D', '--database'
+        , help    = 'Database to connect to'
+        , default = 'postgres'
+        )
     cmd.add_argument \
         ( '-d', '--delimiter'
         , help    = 'Delimiter of csv file, default=%(default)s'
