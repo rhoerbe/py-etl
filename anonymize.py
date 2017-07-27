@@ -7,6 +7,7 @@ import base64
 from   csv      import DictReader, DictWriter
 from   random   import SystemRandom
 from   binascii import hexlify
+from   argparse import ArgumentParser
 
 class Randnum (object) :
     """ Returns a number from the given range
@@ -56,11 +57,11 @@ class Anonymizer (object) :
         , mirfareid_a      = 4
         )
 
-    def __init__ (self) :
+    def __init__ (self, ui_count = 4711) :
         self.rand      = SystemRandom ()
         self.randint   = self.rand.randint
         self.usercount = 0
-        self.ui_count  = 4711
+        self.ui_count  = ui_count
         # Remember values during run and re-insert them for the same
         # unique-id if no other value is in the dataset
         self.values    = {}
@@ -172,8 +173,24 @@ class Anonymizer (object) :
     # end def anonymize
 # end class Anonymizer
 
+def main () :
+    cmd = ArgumentParser ()
+    cmd.add_argument \
+        ( 'filename'
+        , help    = 'Files to anonymize'
+        , nargs   = '+'
+        )
+    cmd.add_argument \
+        ( '-u', '--ui-count'
+        , help    = 'Initial count of anonymized pk_uniqueid'
+        , type    = int
+        , default = 4711
+        )
+    args = cmd.parse_args ()
+    a = Anonymizer (args.ui_count)
+    for ifn in args.filename :
+        a.anonymize (ifn)
+# end def main
 
 if __name__ == '__main__' :
-    a = Anonymizer ()
-    for ifn in sys.argv [1:] :
-        a.anonymize (ifn)
+    main ()
