@@ -54,6 +54,7 @@ class Anonymizer (object) :
         self.rand      = SystemRandom ()
         self.randint   = self.rand.randint
         self.usercount = 0
+        self.ui_count  = 4711
         # Remember values during run and re-insert them for the same
         # unique-id if no other value is in the dataset
         self.values    = {}
@@ -133,6 +134,8 @@ class Anonymizer (object) :
             m = '%02d' % self.randint (1, 12)
             day = '%02d' % self.randint (1, 28)
             self.set (d, k, '%s-%s-%s %s' % (y, m, day, d2))
+        self.set (d, 'pk_uniqueid', ('%d' % self.ui_count) + '.0')
+        self.ui_count += 1
         for k in self.randnums :
             if d [k] :
                 v = str (next (self.randnums [k][0]))
