@@ -40,6 +40,12 @@ class Anonymizer (object) :
         , st_person_nr          = (iter (Randnum (11111, 999999)),      True)
         , ident_nr              = (iter (Randnum (11111, 999999)),      True)
         , matrikelnummer        = (iter (Randnum (11111111, 99999999)), False)
+        , chipid_a              =
+            (iter (Randnum (1111111111111111, 9999999999999999)), False)
+        , chipid_b              =
+            (iter (Randnum (1111111111111111, 9999999999999999)), False)
+        , chipid_st             =
+            (iter (Randnum (1111111111111111, 9999999999999999)), False)
         )
 
     hexnums = dict \
