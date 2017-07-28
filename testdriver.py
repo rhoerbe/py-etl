@@ -1,5 +1,8 @@
 #!/usr/bin/python3
 
+import sys
+import os
+import time
 import pyodbc
 from   argparse import ArgumentParser
 from   csv      import DictReader
@@ -70,6 +73,9 @@ class ODBC_Connector (object) :
         self.args   = args
         self.cnx    = pyodbc.connect (DSN = args.database)
         self.cursor = self.cnx.cursor ()
+        # Change directory to called path:
+        p = os.path.dirname (sys.argv [0])
+        os.chdir (p)
     # end def __init__
 
     # functions starting with cmd_ implement external commands
@@ -83,9 +89,25 @@ class ODBC_Connector (object) :
 
     def cmd_update (self, update_number) :
         self.update_data ('testdata/changeset%s.csv' % update_number)
+        self.delete_records \
+            ( 'testdata/eventlog%s.csv' % update_number
+            , 'benutzer_alle_dirxml_v'
+            )
         self.load_data \
             ('testdata/eventlog%s.csv' % update_number, 'eventlog_ph')
     # end def cmd_update
+
+    def cmd_wait_for_sync (self) :
+        """ Wait for ETL to finish sync. After a finished sync we will
+            find no eventlog records with status = 'N'
+        """
+        l = 1
+        while l :
+            sql = "select status from eventlog_ph where status = 'N'"
+            self.cursor.execute (sql)
+            l   = len (self.cursor.fetchall ())
+            time.sleep (1)
+    # end def cmd_wait_for_sync
 
     def create_tables (self) :
         """ Create the tables in the given database
@@ -104,6 +126,25 @@ class ODBC_Connector (object) :
                 if 'already exists' not in str (cause) :
                     raise
     # end def create_tables
+
+    def delete (self, table, key, kvalue) :
+        sql = 'delete from %s where %s = ?' % (table, key)
+        self.cursor.execute (sql, kvalue)
+    # end def delete
+
+    def delete_records (self, filename, table) :
+        """ Records to be deleted are inferred from the eventlog: Events
+            with event_type 4 are "delete row", so we delete these
+            pk_uniqueid from our table, the pk_uniqueid isn't coded
+            explicitly but is taken from the table_key.
+        """
+        with open (filename, 'r', encoding = 'utf-8') as f :
+            dr = DictReader (f, delimiter = ';')
+            for d in dr :
+                if d ['event_type'] == '4' :
+                    key, kval = d ['table_key'].split ('=', 1)
+                    self.delete (table, key, int (kval))
+    # end def delete_records
 
     def drop_tables (self) :
         for tbl in self.fields :
@@ -124,23 +165,6 @@ class ODBC_Connector (object) :
         v   = (self.to_sql (k, d [k]) for k in fn if d [k])
         self.cursor.execute (sql, *v)
     # end def insert
-
-    def update (self, table, key, kvalue, d) :
-        fn  = sorted (d.keys ())
-        sql = 'update %s set %s where %s = ?'
-        sql = \
-            ( sql
-            % ( table
-              , ', '.join
-                  ('%s = %s' % (k, self.to_sql_tpl (k, d [k])) for k in fn)
-              , key
-              )
-            )
-        v   = list (self.to_sql (k, d [k]) for k in fn if d [k])
-        #print (sql, v)
-        v.append (kvalue)
-        self.cursor.execute (sql, *v)
-    # end def update
 
     def load_data (self, filename, table) :
         with open (filename, 'r', encoding = 'utf-8') as f :
@@ -176,6 +200,23 @@ class ODBC_Connector (object) :
                 return "to_timestamp (?, 'YYYY-MM-DD HH24:MI:SS')"
         return '?'
     # end def to_sql_tpl
+
+    def update (self, table, key, kvalue, d) :
+        fn  = sorted (d.keys ())
+        sql = 'update %s set %s where %s = ?'
+        sql = \
+            ( sql
+            % ( table
+              , ', '.join
+                  ('%s = %s' % (k, self.to_sql_tpl (k, d [k])) for k in fn)
+              , key
+              )
+            )
+        v   = list (self.to_sql (k, d [k]) for k in fn if d [k])
+        #print (sql, v)
+        v.append (kvalue)
+        self.cursor.execute (sql, *v)
+    # end def update
 
     def update_data (self, filename) :
         """ Updates to existing records only for benutzer_alle_dirxml_v

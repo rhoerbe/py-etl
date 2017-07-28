@@ -1,2 +1,2 @@
 record_id;table_key;status;event_type;event_time;perpetrator;table_name;column_name;old_value;new_value;synch_id;synch_online_flag;transaction_flag;read_time;error_message;attempt;admin_notify_flag
-1000003330138;pk_uniqueid=4713;S;6;2017-07-11 10:21:51;WEB_CONNECT;benutzer_alle_dirxml_v;;;;;N;N;2017-07-11 10:22:15;;1.0;N
+1000003330138;pk_uniqueid=4713;N;6;2017-07-11 10:21:51;WEB_CONNECT;benutzer_alle_dirxml_v;;;;;N;N;2017-07-11 10:22:15;;1.0;N

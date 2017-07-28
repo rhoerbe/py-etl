@@ -4,6 +4,7 @@ import os
 import sys
 import pyodbc
 import pytz
+import time
 
 from argparse         import ArgumentParser
 from ldap3            import Server, Connection, SCHEMA, BASE, LEVEL
@@ -23,7 +24,7 @@ class LDAP_Access (object) :
         self.args  = args
         # FIXME: Poor-mans logger for now
         self.log = Namespace ()
-        self.log ['debug'] = self.log ['error'] = log
+        self.log ['debug'] = self.log ['error'] = self.log ['warn'] = log
 
         self.srv   = Server (self.args.uri, get_info = SCHEMA)
         self.ldcon = Connection \
@@ -219,6 +220,12 @@ class ODBC_Connector (object) :
         , funktionen      = from_multi
         , schulkennzahlen = from_multi
         )
+    event_types = \
+        { 4.0   : 'delete'
+        , 5.0   : 'insert'
+        , 6.0   : 'update'
+        }
+
 
     def __init__ (self, args) :
         self.args  = args
@@ -226,7 +233,7 @@ class ODBC_Connector (object) :
         self.table = 'benutzer_alle_dirxml_v'
         # FIXME: Poor-mans logger for now
         self.log = Namespace ()
-        self.log ['debug'] = self.log ['error'] = log
+        self.log ['debug'] = self.log ['error'] = self.log ['warn'] = log
         self.get_passwords ()
     # end def __init__
 
@@ -234,8 +241,146 @@ class ODBC_Connector (object) :
         if self.args.action == 'initial_load' :
             self.initial_load ()
         else :
-            self.etl ()
+            while True :
+                for dn, db in zip (self.args.base_dn, self.args.databases) :
+                    self.db = db
+                    self.dn = dn
+                    self.ldap.set_dn (dn)
+                    self.cnx    = pyodbc.connect (DSN = db)
+                    self.cursor = self.cnx.cursor ()
+                    self.etl ()
+                time.sleep (self.args.sleeptime)
     # end def action
+
+    def delete_in_ldap (self, pk_uniqueid) :
+        uid = self.to_ldap (pk_uniqueid, 'pk_uniqueid')
+        ldrec = self.ldap.get_entry (uid)
+        if not ldrec :
+            return
+        dn = ldrec ['dn']
+        r = self.ldap.delete (dn)
+        if not r :
+            msg = \
+                ( "Error on LDAP delete: "
+                  "%(description)s: %(message)s"
+                  " (code: %(result)s)"
+                % self.ldap.result
+                )
+            self.log.error (msg)
+            return msg
+    # end def delete_in_ldap
+
+    def etl (self) :
+        tbl    = 'eventlog_ph'
+        fields = self.fields [tbl]
+        sql = "select %s from %s where status in ('N', 'E')"
+        sql = sql % (', '.join (fields), tbl)
+        self.cursor.execute (sql)
+        updates = {}
+        for row in self.cursor.fetchall () :
+            rw = Namespace ((k, row [i]) for i, k in enumerate (fields))
+            if rw.event_type not in self.event_types :
+                msg = 'Invalid event_type: %s' % rw.event_type
+                updates [rw.record_id] = dict \
+                    ( error_message = msg
+                    , status        = 'F'
+                    )
+                self.error (msg)
+                continue
+            event_type = self.event_types [rw.event_type]
+            if not rw.table_key.startswith ('pk_uniqueid=') :
+                msg = 'Invalid table_key, expect pk_uniqueid='
+                updates [rw.record_id] = dict \
+                    ( error_message = msg
+                    , status        = 'F'
+                    )
+                self.error (msg)
+                continue
+            if rw.table_name.lower () != 'benutzer_alle_dirxml_v' :
+                msg = 'Invalid table_name, expect benutzer_alle_dirxml_v'
+                updates [rw.record_id] = dict \
+                    ( error_message = msg
+                    , status        = 'F'
+                    )
+                self.error (msg)
+                continue
+            uid = rw.table_key.split ('=', 1) [-1]
+            try :
+                uid = int (uid)
+            except ValueError :
+                msg = 'Invalid table_key, expect numeric id'
+                updates [rw.record_id] = dict \
+                    ( error_message = msg
+                    , status        = 'F'
+                    )
+                self.error (msg)
+                continue
+            sql = 'select %s from %s where pk_uniqueid = ?'
+            sql = sql % (','.join (self.fields [self.table]), self.table)
+            self.cursor.execute (sql, uid)
+            usr = self.cursor.fetchall ()
+            assert len (usr) <= 1
+            self.warning_message = None
+            if len (usr) :
+                if event_type == 'delete' :
+                    msg = 'Record %s existing in DB' % uid
+                    updates [rw.record_id] = dict \
+                        ( error_message = msg
+                        , status        = 'W'
+                        )
+                    self.log.warn (msg)
+                is_new = event_type == 'insert'
+                msg = self.sync_to_ldap (usr [0], is_new = is_new)
+            else :
+                if event_type != 'delete' :
+                    msg = 'Record %s not existing in DB' % uid
+                    updates [rw.record_id] = dict \
+                        ( error_message = msg
+                        , status        = 'W'
+                        )
+                    self.log.warn (msg)
+                msg = self.delete_in_ldap (uid)
+            if msg :
+                # Error message, overwrite possible earlier warnings for
+                # this record
+                status  = 'E'
+                attempt = int (rw.attempt)
+                if attempt > 10 :
+                    status = 'F'
+                attempt += 1
+                updates [rw.record_id] = dict \
+                    ( error_message = msg
+                    , status        = status
+                    , attempt       = attempt
+                    )
+            elif self.warning_message :
+                if rw.record_id in updates :
+                    assert updates [rw.record_id][status] == 'W'
+                    updates [rw.record_id]['error_message'] = '\n'.join \
+                        (( updates [rw.record_id]['error_message']
+                         , self.warning_message
+                        ))
+                else :
+                    updates [rw.record_id] = dict \
+                        ( error_message = self.warning_message
+                        , status        = 'W'
+                        )
+            elif rw.record_id in updates :
+                pass
+            else :
+                updates [rw.record_id] = dict (status = 'S')
+            updates [rw.record_id]['read_time'] = datetime.utcnow ()
+        for key in updates :
+            fn  = list (sorted (updates [key].keys ()))
+            sql = "update eventlog_ph set %s where record_id = ?"
+            sql = sql % ', '.join ('%s = ?' % k for k in fn)
+            #print (sql)
+            p   = list (updates [key][k] for k in fn)
+            p.append (float (key))
+            #print (p)
+            self.cursor.execute (sql, * p)
+        self.cursor.commit ()
+    # end def etl
 
     def generate_initial_tree (self) :
         """ Check if initial tree exists, generate if non-existing
@@ -291,7 +436,7 @@ class ODBC_Connector (object) :
             self.db = db
             self.dn = dn
             self.ldap.set_dn (dn)
-            print (db)
+            self.log.debug (db)
             self.cnx    = pyodbc.connect (DSN = db)
             self.cursor = self.cnx.cursor ()
             tbl         = self.table
@@ -322,11 +467,11 @@ class ODBC_Connector (object) :
         ldrec = self.ldap.get_entry (uid)
         if ldrec :
             if is_new :
-                # Log an error but continue like a normal sync
-                self.log.error \
-                    ( 'Found pk_uniqueid "%s" when sync says it should be new'
+                # Log a warning but continue like a normal sync
+                msg = 'Found pk_uniqueid "%s" when sync says it should be new' \
                     % uid
-                    )
+                self.log.warn (msg)
+                self.warning_message = msg
             ld_update = {}
             ld_delete = {}
             for k in rw :
@@ -381,11 +526,10 @@ class ODBC_Connector (object) :
                     return msg
         else :
             if not is_new :
-                # Log an error but continue like a normal sync
-                self.log.error \
-                    ( 'pk_uniqueid "%s" not found, sync says it exists'
-                    % uid
-                    )
+                # Log a warning but continue like a normal sync
+                msg = 'pk_uniqueid "%s" not found, sync says it exists' % uid
+                self.log.warn (msg)
+                self.warning_message = msg
             ld_update = {}
             for k in rw :
                 lk = self.odbc_to_ldap_field [k]
@@ -459,6 +603,14 @@ def main () :
         ( "-P", "--password"
         , help    = "Password(s) for binding to LDAP"
         , default = ldap_pw
+        )
+    sleeptime = int (os.environ.get ('ETL_SLEEPTIME', '20'))
+    cmd.add_argument \
+        ( '-s', '--sleeptime'
+        , help    = "Seconds to sleep between etl invocations, "
+                    " default=%(default)s"
+        , type    = int
+        , default = sleeptime
         )
     default_ldap = os.environ.get ('LDAP_URI', 'ldap://06openldap:8389')
     cmd.add_argument \

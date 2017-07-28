@@ -1,5 +1,5 @@
 record_id;table_key;status;event_type;event_time;perpetrator;table_name;column_name;old_value;new_value;synch_id;synch_online_flag;transaction_flag;read_time;error_message;attempt;admin_notify_flag
-398530;pk_uniqueid=4713;S;6;2017-07-11 10:18:57;WEB_CONNECT;benutzer_alle_dirxml_v;;;;268691.0;J;N;2017-07-11 10:19:15;;1.0;N
-1000003330134;pk_uniqueid=4713;S;6;2017-07-11 10:18:58;WEB_CONNECT;benutzer_alle_dirxml_v;;;;268691.0;N;N;2017-07-11 10:19:15;;1.0;N
-1000003330135;pk_uniqueid=4713;S;6;2017-07-11 10:18:58;WEB_CONNECT;benutzer_alle_dirxml_v;;;;268691.0;N;N;2017-07-11 10:19:15;;1.0;N
-1000003330136;pk_uniqueid=4713;S;6;2017-07-11 10:18:59;WEB_CONNECT;benutzer_alle_dirxml_v;;;;268691.0;N;N;2017-07-11 10:19:15;;1.0;N
+398530;pk_uniqueid=4713;N;6;2017-07-11 10:18:57;WEB_CONNECT;benutzer_alle_dirxml_v;;;;268691.0;J;N;2017-07-11 10:19:15;;1.0;N
+1000003330134;pk_uniqueid=4713;N;6;2017-07-11 10:18:58;WEB_CONNECT;benutzer_alle_dirxml_v;;;;268691.0;N;N;2017-07-11 10:19:15;;1.0;N
+1000003330135;pk_uniqueid=4713;N;6;2017-07-11 10:18:58;WEB_CONNECT;benutzer_alle_dirxml_v;;;;268691.0;N;N;2017-07-11 10:19:15;;1.0;N
+1000003330136;pk_uniqueid=4713;N;6;2017-07-11 10:18:59;WEB_CONNECT;benutzer_alle_dirxml_v;;;;268691.0;N;N;2017-07-11 10:19:15;;1.0;N
