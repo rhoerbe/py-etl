@@ -149,7 +149,11 @@ class ODBC_Connector (object) :
     def drop_tables (self) :
         for tbl in self.fields :
             sql = 'drop table %s' % tbl
-            self.cursor.execute (sql)
+            try :
+                self.cursor.execute (sql)
+            except pyodbc.Error as cause :
+                if 'does not exist' not in str (cause) :
+                    raise
     # end def drop_tables
 
     def insert (self, table, d) :
