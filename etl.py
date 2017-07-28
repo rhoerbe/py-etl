@@ -222,7 +222,6 @@ class ODBC_Connector (object) :
 
     def __init__ (self, args) :
         self.args  = args
-        self.table = args.table.lower ()
         self.ldap  = LDAP_Access (self.args)
         self.table = 'benutzer_alle_dirxml_v'
         # FIXME: Poor-mans logger for now
@@ -466,20 +465,6 @@ def main () :
         ( '-u', '--uri'
         , help    = "LDAP uri, default=%(default)s"
         , default = default_ldap
-        )
-    # -t (table) and -T (time) are mutually exclusive: We dump out both
-    # relevant tables if the -T option is given.
-    group = cmd.add_mutually_exclusive_group ()
-    group.add_argument \
-        ( '-t', '--table'
-        , help    = 'Table name, default=%(default)s'
-        , default = 'eventlog_ph'
-        )
-    group.add_argument \
-        ( '-T', '--time'
-        , help    = 'Cut-off time for eventlog, if specified, both the '
-                    'eventlog_ph *and* the benutzer_alle_dirxml_v are '
-                    'dumped but only records newer than the given time.'
         )
     args = cmd.parse_args ()
     if not args.base_dn or not args.databases :
