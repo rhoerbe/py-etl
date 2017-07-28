@@ -12,6 +12,8 @@ from ldap3            import ALL_ATTRIBUTES, DEREF_NEVER
 from ldap3            import MODIFY_REPLACE, MODIFY_DELETE, MODIFY_ADD
 from datetime         import datetime
 from ldaptimestamp    import LdapTimeStamp
+from aes_pkcs7        import AES_Cipher
+from binascii         import hexlify, unhexlify
 
 def log (msg) :
     """ FIXME: We want real logging someday """
@@ -200,7 +202,7 @@ class ODBC_Connector (object) :
         , mirfareid_st          = 'phonlineMirfareIDStudent'
         , nachname              = 'sn'
         , org_einheiten         = 'phonlineOrgEinheiten'
-        , passwort              = 'nspmDistributionPassword'
+        , passwort              = 'idnDistributionPassword'
         , person_nr             = 'phonlinePersonNr'
         , person_nr_obf         = 'phonlinePersonNrOBF'
         , pk_uniqueid           = 'phonlineUniqueId'
@@ -231,10 +233,16 @@ class ODBC_Connector (object) :
         self.args  = args
         self.ldap  = LDAP_Access (self.args)
         self.table = 'benutzer_alle_dirxml_v'
+        self.aes   = AES_Cipher \
+            (hexlify (self.args.encryption_password.encode ('utf-8')))
         # FIXME: Poor-mans logger for now
         self.log = Namespace ()
         self.log ['debug'] = self.log ['error'] = self.log ['warn'] = log
         self.get_passwords ()
+        # copy class dict to local dict
+        self.data_conversion = dict (self.data_conversion)
+        # and add a bound method
+        self.data_conversion ['passwort'] = self.from_password
     # end def __init__
 
     def action (self) :
@@ -560,6 +568,15 @@ class ODBC_Connector (object) :
         return item
     # end def to_ldap
 
+    def from_password (self, item) :
+        """ Return encrypted password
+        """
+        iv = None
+        if self.args.crypto_iv :
+            iv = unhexlify (self.args.crypto_iv)
+        return self.aes.encrypt (item.encode ('utf-8'), iv).decode ('ascii')
+    # end def from_password
+
 # end class ODBC_Connector
 
 def main () :
@@ -590,19 +607,33 @@ def main () :
         , default = []
         )
     cmd.add_argument \
+        ( "-i", "--crypto-iv"
+        , help    = "You can pass in a fixed crypto initialisation vector"
+                    " for regression testing -- don't do this in production!"
+        )
+    cmd.add_argument \
         ( '-o', '--output-file'
         , help    = 'Output file for writing CSV, default is table name'
         )
-    # get default_pw from /etc/passwords LDAP_PASSWORD entry
+    # Get default_pw from /etc/passwords LDAP_PASSWORD entry.
+    # Also get password-encryption password when we're at it
     ldap_pw = 'changeme'
+    pw_encr = 'changemetoo*****' # must be 16 characters long after encoding
     with open ('/etc/passwords', 'r') as f :
         for line in f :
             if line.startswith ('LDAP_PASSWORD') :
                 ldap_pw = line.split ('=', 1) [-1].strip ()
+            if line.startswith ('PASSWORD_ENCRYPTION_PASSWORD') :
+                pw_encr = line.split ('=', 1) [-1].strip ()
     cmd.add_argument \
         ( "-P", "--password"
         , help    = "Password(s) for binding to LDAP"
         , default = ldap_pw
+        )
+    cmd.add_argument \
+        ( "-p", "--encryption-password"
+        , help    = "Password(s) for encrypting passwords in LDAP"
+        , default = pw_encr
         )
     sleeptime = int (os.environ.get ('ETL_SLEEPTIME', '20'))
     cmd.add_argument \
