@@ -244,13 +244,13 @@ def main () :
     if args.action == 'iter' :
         count = 0
         for x in ld.iter () :
-            if x ['dn'].endswith (',ou=user,ou=ph08,o=BMUKK-QS') :
-                if count == 5 :
-                    print (x)
-                count += 1
-                print (x ['dn'], count, "\r", end = '')
-            else :
-                print (x)
+            print (x ['dn'], end = ' ')
+            for k in sorted (x ['attributes'].keys ()) :
+                if k == 'etlTimestamp' :
+                    continue
+                print ("%s=%s" % (k, x ['attributes'][k]), end = ' ')
+            print ("")
+            count += 1
         print ("\n\nCount:", count)
     if args.action == 'compare' :
         ld2 = LDAP_Access (args, second = True)
