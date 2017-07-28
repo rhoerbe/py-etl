@@ -6,7 +6,6 @@ import pyodbc
 import pytz
 
 from argparse         import ArgumentParser
-from csv              import writer
 from ldap3            import Server, Connection, SCHEMA, BASE, LEVEL
 from ldap3            import ALL_ATTRIBUTES, DEREF_NEVER
 from ldap3            import MODIFY_REPLACE, MODIFY_DELETE, MODIFY_ADD
@@ -222,11 +221,10 @@ class ODBC_Connector (object) :
         )
 
     def __init__ (self, args) :
-        self.args   = args
-        self.table  = args.table.lower ()
-        if self.args.action != 'csv' :
-            self.ldap  = LDAP_Access (self.args)
-            self.table = 'benutzer_alle_dirxml_v'
+        self.args  = args
+        self.table = args.table.lower ()
+        self.ldap  = LDAP_Access (self.args)
+        self.table = 'benutzer_alle_dirxml_v'
         # FIXME: Poor-mans logger for now
         self.log = Namespace ()
         self.log ['debug'] = self.log ['error'] = log
@@ -234,60 +232,11 @@ class ODBC_Connector (object) :
     # end def __init__
 
     def action (self) :
-        if self.args.action == 'csv' :
-            self.as_csv ()
-        elif self.args.action == 'initial_load' :
+        if self.args.action == 'initial_load' :
             self.initial_load ()
         else :
             self.etl ()
     # end def action
-
-    def as_csv (self) :
-        """ Get table into a csv file. If a time is given, we only
-            select the relevant table rows from the eventlog_ph table
-            and then select the relevant rows from the
-            benutzer_alle_dirxml_v table.
-        """
-        self.cnx    = pyodbc.connect (DSN = self.args.databases [0])
-        self.cursor = self.cnx.cursor ()
-        fields = self.fields [self.table]
-        where  = ''
-        fn     = self.args.output_file
-        if not fn :
-            fn = self.table
-        if self.args.time :
-            t     = self.args.time.replace ('.', ' ')
-            fmt   = 'YYYY-MM-DD HH:MI:SS'
-            where = "where event_time > to_date ('%s', '%s')" % (t, fmt)
-            fn    = fn + '.' + self.args.time.replace (' ', '.')
-        if not fn.endswith ('.csv') :
-            fn = fn + '.csv'
-        ids = []
-        with open (fn, 'w', encoding = 'utf-8') as f :
-            w = writer (f, delimiter = self.args.delimiter)
-            w.writerow (fields)
-            self.cursor.execute \
-                ( 'select %s from %s %s'
-                % (','.join (fields), self.table, where)
-                )
-            for row in self.cursor :
-                w.writerow (row)
-                ids.append (row [1].split ('=') [1])
-        if self.args.time and ids :
-            tbl = self.table
-            fn  = tbl + '.' + self.args.time.replace (' ', '.') + '.csv'
-            fields = self.fields [tbl]
-            where  = "where pk_uniqueid in (%s)" % ','.join (ids)
-            with open (fn, 'w', encoding = 'utf-8') as f :
-                w = writer (f, delimiter = self.args.delimiter)
-                w.writerow (fields)
-                self.cursor.execute \
-                    ( 'select %s from %s %s'
-                    % (','.join (fields), tbl, where)
-                    )
-                for row in self.cursor :
-                    w.writerow (row)
-    # end def as_csv
 
     def generate_initial_tree (self) :
         """ Check if initial tree exists, generate if non-existing
@@ -474,7 +423,7 @@ def main () :
     cmd = ArgumentParser ()
     cmd.add_argument \
         ( 'action'
-        , help    = 'Action to perform, one of "csv", "initial_load", "etl"'
+        , help    = 'Action to perform, one of "initial_load", "etl"'
         )
     default_bind_dn = os.environ.get ('LDAP_BIND_DN', 'cn=admin,o=BMUKK')
     cmd.add_argument \
@@ -496,11 +445,6 @@ def main () :
                     "environment, will use *all* databases specified"
         , action  = 'append'
         , default = []
-        )
-    cmd.add_argument \
-        ( '-D', '--delimiter'
-        , help    = 'Delimiter of csv file, default=%(default)s'
-        , default = ';'
         )
     cmd.add_argument \
         ( '-o', '--output-file'
