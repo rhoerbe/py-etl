@@ -156,6 +156,8 @@ compare_ignore = set \
      , 'nspmDistributionPassword'
      , 'passwordAllowChange'
      , 'passwordRequired'
+     , 'etlTimestamp'
+     , 'idnDistributionPassword'
     ))
 
 def main () :
