@@ -454,6 +454,12 @@ class ODBC_Connector (object) :
             for n, row in enumerate (self.cursor) :
                 self.log.debug (n)
                 self.sync_to_ldap (row, is_new = True)
+        self.log.warn ("SUCCESS")
+        sys.stdout.flush ()
+        # Default is to wait forever after initial load
+        if not self.args.terminate :
+            while True :
+                time.sleep (self.args.sleeptime)
     # end def initial_load
 
     def sync_to_ldap (self, row, is_new = False) :
@@ -642,6 +648,12 @@ def main () :
                     " default=%(default)s"
         , type    = int
         , default = sleeptime
+        )
+    cmd.add_argument \
+        ( '-t', '--terminate'
+        , help    = "Terminate container after initial_load"
+        , action  = "store_true"
+        , default = False
         )
     default_ldap = os.environ.get ('LDAP_URI', 'ldap://06openldap:8389')
     cmd.add_argument \
