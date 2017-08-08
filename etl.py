@@ -584,6 +584,10 @@ class ODBC_Connector (object) :
                     self.log.error (msg + str (changes))
                     return msg
         else :
+            # Ensure we use new random IV if pw changes
+            # We've used the IV of the old password for
+            # comparison previously
+            self.crypto_iv = self.args.crypto_iv
             if not is_new :
                 # Log a warning but continue like a normal sync
                 msg = 'pk_uniqueid "%s" not found, sync says it exists' % uid
@@ -598,10 +602,8 @@ class ODBC_Connector (object) :
             ld_update ['objectClass'] = \
                 ['inetOrgPerson', 'phonlinePerson','idnSyncstat']
             ld_update ['etlTimestamp'] = etl_ts
-            r = self.ldap.add \
-                ( ('cn=%s,' % ld_update ['cn']) + self.dn
-                , attributes = ld_update
-                )
+            dn = ('cn=%s,' % ld_update ['cn']) + self.dn
+            r  = self.ldap.add (dn, attributes = ld_update)
             if not r :
                 msg = \
                     ( "Error on LDAP add: %(description)s: %(message)s"
@@ -610,6 +612,9 @@ class ODBC_Connector (object) :
                     )
                 self.log.error (msg)
                 return msg
+            if 'idnDistributionPassword' in ld_update :
+                self.ldap.extend.standard.modify_password \
+                    (dn, new_password = rw ['passwort'])
     # end def sync_to_ldap
 
     def to_ldap (self, item, dbkey) :

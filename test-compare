@@ -1,8 +1,8 @@
 #!/bin/sh -e
 
-/opt/bin/ldaptest.py -2 iter | diff - /opt/bin/testdata/ldap00.txt
+/opt/bin/ldaptest.py -2 iter | diff /opt/bin/testdata/ldap00.txt -
 for test in 01 02 03 04 05 06 07 ; do
     /opt/bin/testdriver.py -A $test update
     /opt/bin/testdriver.py wait_for_sync
-    /opt/bin/ldaptest.py -2 iter | diff - /opt/bin/testdata/ldap$test.txt
+    /opt/bin/ldaptest.py -2 iter | diff /opt/bin/testdata/ldap$test.txt -
 done

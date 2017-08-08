@@ -280,7 +280,11 @@ def main () :
             for k in sorted (x ['attributes'].keys ()) :
                 if k == 'etlTimestamp' :
                     continue
-                print ("%s=%s" % (k, x ['attributes'][k]), end = ' ')
+                v = x ['attributes'][k]
+                if k == 'userPassword' :
+                    assert len (v) == 1
+                    v = v [0].decode ('ascii').split ('}', 1) [0] + '}'
+                print ("%s=%s" % (k, v), end = ' ')
             print ("")
             count += 1
         print ("\n\nCount:", count)
