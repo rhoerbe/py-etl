@@ -262,7 +262,10 @@ class ODBC_Connector (object) :
         self.args  = args
         self.ldap  = LDAP_Access (self.args)
         self.table = 'benutzer_alle_dirxml_v'
-        self.aes   = AES_Cipher \
+        self.crypto_iv = None
+        if self.args.crypto_iv :
+            self.crypto_iv = self.args.crypto_iv
+        self.aes = AES_Cipher \
             (hexlify (self.args.encryption_password.encode ('utf-8')))
         # FIXME: Poor-mans logger for now
         self.log = Namespace ()
@@ -515,6 +518,10 @@ class ODBC_Connector (object) :
                     % uid
                 self.log.warn (msg)
                 self.warning_message = msg
+            # Ensure we use the same IV for comparison
+            pw = ldrec ['attributes'].get ('idnDistributionPassword', '')
+            if len (pw) > 32 :
+                self.crypto_iv = pw [:32]
             ld_update = {}
             ld_delete = {}
             for k in rw :
@@ -526,6 +533,12 @@ class ODBC_Connector (object) :
                 if v is None :
                     ld_delete [lk] = None
                 else :
+                    # Ensure we use new random IV if pw changes
+                    # We've used the IV of the old password for
+                    # comparison previously
+                    if k == 'passwort' :
+                        self.crypto_iv = self.args.crypto_iv
+                        v = self.to_ldap (rw [k], k)
                     ld_update [lk] = v
             assert 'phonlineUniqueId' not in ld_update
             assert 'phonlineUniqueId' not in ld_delete
@@ -548,6 +561,9 @@ class ODBC_Connector (object) :
                     return msg
                 del ld_update ['cn']
                 dn = cn + ',' + dn.split (',', 1)[-1]
+            if 'idnDistributionPassword' in ld_update :
+                self.ldap.extend.standard.modify_password \
+                    (dn, new_password = rw ['passwort'])
             if ld_update or ld_delete :
                 changes = {}
                 for k in ld_update :
@@ -607,8 +623,8 @@ class ODBC_Connector (object) :
         """ Return encrypted password
         """
         iv = None
-        if self.args.crypto_iv :
-            iv = unhexlify (self.args.crypto_iv)
+        if self.crypto_iv :
+            iv = unhexlify (self.crypto_iv)
         return self.aes.encrypt (item.encode ('utf-8'), iv).decode ('ascii')
     # end def from_password
 
