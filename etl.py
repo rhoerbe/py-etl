@@ -259,9 +259,9 @@ class ODBC_Connector (object) :
 
 
     def __init__ (self, args) :
-        self.args  = args
-        self.ldap  = LDAP_Access (self.args)
-        self.table = 'benutzer_alle_dirxml_v'
+        self.args      = args
+        self.ldap      = LDAP_Access (self.args)
+        self.table     = 'benutzer_alle_dirxml_v'
         self.crypto_iv = None
         if self.args.crypto_iv :
             self.crypto_iv = self.args.crypto_iv
@@ -477,6 +477,17 @@ class ODBC_Connector (object) :
             self.dn = dn
             self.ldap.set_dn (dn)
             self.log.debug (db)
+            # Get all unique ids currently in ldap under our tree
+            self.uidmap = {}
+            r = self.ldap.search \
+                ( self.dn, '(phonlineUniqueId=*)'
+                , search_scope = LEVEL
+                , attributes   = ['phonlineUniqueId']
+                )
+            if r :
+                for entry in self.ldap.response :
+                    uid = entry ['attributes']['phonlineUniqueId']
+                    self.uidmap [uid] = entry ['dn']
             self.cnx    = pyodbc.connect (DSN = db)
             self.cursor = self.cnx.cursor ()
             tbl         = self.table
@@ -485,7 +496,23 @@ class ODBC_Connector (object) :
                 ('select %s from %s' % (','.join (fields), self.table))
             for n, row in enumerate (self.cursor) :
                 self.log.debug (n)
+                idx = fields.index ('pk_uniqueid')
+                uid = "%d" % row [idx]
+                if uid in self.uidmap :
+                    del self.uidmap [uid]
                 self.sync_to_ldap (row, is_new = True)
+            for u in sorted (self.uidmap) :
+                dn = self.uidmap [u]
+                print ("Deleting: %s: %s" % (u, dn))
+                r = self.ldap.delete (dn)
+                if not r :
+                    msg = \
+                        ( "Error on LDAP delete: "
+                          "%(description)s: %(message)s"
+                          " (code: %(result)s)"
+                        % self.ldap.result
+                        )
+                    self.log.error (msg)
         self.log.warn ("SUCCESS")
         sys.stdout.flush ()
         # Default is to wait forever after initial load

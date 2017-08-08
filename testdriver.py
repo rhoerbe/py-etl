@@ -81,6 +81,13 @@ class ODBC_Connector (object) :
     # functions starting with cmd_ implement external commands
     # to be called via command-line interface
 
+    def cmd_deluids (self, *uids) :
+        table = 'benutzer_alle_dirxml_v'
+        for uid in uids :
+            self.delete (table, 'pk_uniqueid', int (uid))
+        self.cursor.commit ()
+    # end def cmd_deluids
+
     def cmd_initial_load (self) :
         self.drop_tables ()
         self.create_tables ()
