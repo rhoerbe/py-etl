@@ -181,6 +181,7 @@ compare_ignore = set \
      , 'passwordRequired'
      , 'etlTimestamp'
      , 'idnDistributionPassword'
+     , 'userPassword'
     ))
 
 def main () :
