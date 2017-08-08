@@ -60,6 +60,9 @@ class LDAP_Access (object) :
             self.basedn = self.args.base_dn2
             uri = self.args.uri2
             pw = self.args.password2
+        self.dn_set = self.get_dn_set
+        if self.args.paged_search :
+            self.dn_set = self.get_dn_set_paged_search
         self.verbose (self.args.uri, self.binddn)
         self.srv    = Server (uri, get_info = ALL)
         self.ldcon  = Connection (self.srv, self.binddn, pw)
@@ -71,6 +74,27 @@ class LDAP_Access (object) :
             print (self.srv.schema)
             sys.exit (0)
     # end def __init__
+
+    def get_dn_set_paged_search (self, basedn) :
+            filt = '(objectclass=*)'
+            return set \
+                ( x ['dn'] for x in self.ldcon.extend.standard.paged_search
+                    ( basedn, filt
+                    , search_scope        = LEVEL
+                    , dereference_aliases = DEREF_NEVER
+                    , paged_size          = 500
+                    , generator           = False
+                    )
+                )
+    # end def get_dn_set_paged_search
+
+    def get_dn_set (self, basedn) :
+            filt = '(objectclass=*)'
+            result = self.ldcon.search (basedn, filt, search_scope = LEVEL)
+            if not result :
+                return set ()
+            return set (x ['dn'] for x in self.ldcon.response)
+    # end def get_dn_set_paged_search
 
     def get_item (self, dn) :
         """ Get single item by dn """
@@ -105,16 +129,7 @@ class LDAP_Access (object) :
         # for sub-nodes here. So since we know the structure we
         # don't recurse here.
         if len (r ['dn'].split (',')) < 4 :
-            filt = '(objectclass=*)'
-            dns = set \
-                ( x ['dn'] for x in self.ldcon.extend.standard.paged_search
-                    ( basedn, filt
-                    , search_scope        = LEVEL
-                    , dereference_aliases = DEREF_NEVER
-                    , paged_size          = 500
-                    , generator           = False
-                    )
-                )
+            dns = self.dn_set (basedn)
             for dn in sorted (dns, key = lambda x : x.lower ()) :
                 if dn == basedn :
                     continue
@@ -202,6 +217,12 @@ def main () :
         ( "-P", "--password"
         , dest    = "password"
         , help    = "Password for binding"
+        )
+    cmd.add_argument \
+        ( "-p", "--paged-search"
+        , help    = "Use paged search for getting DNs"
+        , action  = "store_true"
+        , default = False
         )
     cmd.add_argument \
         ( "--password2"
