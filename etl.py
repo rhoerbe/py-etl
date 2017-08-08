@@ -112,6 +112,30 @@ def from_db_number (item) :
     return str (int (item))
 # end def from_db_number
 
+def from_db_rstrip (item) :
+    """ Strip items before writing to LDAP. Note that if the stripping
+        results in an empty string we return None (leave attribute empty)
+    """
+    if item is None :
+        return item
+    item = item.rstrip ()
+    if item :
+        return item
+    return None
+# end def from_db_rstrip
+
+def from_db_strip (item) :
+    """ Strip items before writing to LDAP. Note that if the stripping
+        results in an empty string we return None (leave attribute empty)
+    """
+    if item is None :
+        return item
+    item = item.strip ()
+    if item :
+        return item
+    return None
+# end def from_db_strip
+
 def from_multi (item) :
     """ Return array for an item containing several fields separated by
         semicolon in the database
@@ -221,6 +245,11 @@ class ODBC_Connector (object) :
         , pk_uniqueid     = from_db_number
         , funktionen      = from_multi
         , schulkennzahlen = from_multi
+        , emailadresse_b  = from_db_rstrip
+        , emailadresse_st = from_db_rstrip
+        , benutzername    = from_db_strip
+        , vorname         = from_db_rstrip
+        , nachname        = from_db_rstrip
         )
     event_types = \
         { 4.0   : 'delete'
@@ -536,7 +565,7 @@ class ODBC_Connector (object) :
                           " (code: %(result)s)"
                         % self.ldap.result
                         )
-                    self.log.error (msg)
+                    self.log.error (msg + str (changes))
                     return msg
         else :
             if not is_new :
