@@ -159,6 +159,14 @@ class LDAP_Access (object) :
 
 # end class LDAP_Access
 
+def multival_fixup (oldval) :
+    return ';'.join (sorted (oldval.split (';')))
+# end def multival_fixup
+
+compare_fixup = dict \
+    ( phonlineBenutzergruppe = multival_fixup
+    )
+
 compare_ignore = set \
     (( 'objectClass'
      , 'ACL'
@@ -312,6 +320,10 @@ def main () :
             for a in sorted (x1a & x2a) :
                 v1 = x1 ['attributes'][a]
                 v2 = x2 ['attributes'][a]
+                if a in compare_fixup :
+                    fixup = compare_fixup [a]
+                    v1 = fixup (v1)
+                    v2 = fixup (v2)
                 if v1 != v2 :
                     print \
                         ( "Differs: %s %s: (%s vs %s)"
