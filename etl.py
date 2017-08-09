@@ -18,6 +18,7 @@ from binascii         import hexlify, unhexlify
 def log (msg) :
     """ FIXME: We want real logging someday """
     print (msg)
+    sys.stdout.flush ()
 # end def log
 
 class LDAP_Access (object) :
