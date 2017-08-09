@@ -460,7 +460,7 @@ class ODBC_Connector (object) :
 
     def get_passwords (self) :
         self.passwords = dict ()
-        with open ('/etc/passwords', 'r') as f :
+        with open ('/etc/conf/passwords', 'r') as f :
             for line in f :
                 line = line.strip ()
                 if line.startswith ('DATABASE_PASSWORDS') :
@@ -698,11 +698,11 @@ def main () :
         ( '-o', '--output-file'
         , help    = 'Output file for writing CSV, default is table name'
         )
-    # Get default_pw from /etc/passwords LDAP_PASSWORD entry.
+    # Get default_pw from /etc/conf/passwords LDAP_PASSWORD entry.
     # Also get password-encryption password when we're at it
     ldap_pw = 'changeme'
     pw_encr = 'changemetoo*****' # must be 16 characters long after encoding
-    with open ('/etc/passwords', 'r') as f :
+    with open ('/etc/conf/passwords', 'r') as f :
         for line in f :
             if line.startswith ('LDAP_PASSWORD') :
                 ldap_pw = line.split ('=', 1) [-1].strip ()
