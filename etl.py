@@ -82,7 +82,7 @@ class LDAP_Access (object) :
         if name.startswith ('_') :
             raise AttributeError (name)
         r = getattr (self.ldcon, name)
-        setattr (self, name, r)
+        # Don't cache!
         return r
     # end def __getattr__
 
@@ -488,6 +488,7 @@ class ODBC_Connector (object) :
                 for entry in self.ldap.response :
                     uid = entry ['attributes']['phonlineUniqueId']
                     self.uidmap [uid] = entry ['dn']
+                    assert entry ['dn'].endswith (self.dn)
             self.cnx    = pyodbc.connect (DSN = db)
             self.cursor = self.cnx.cursor ()
             tbl         = self.table
