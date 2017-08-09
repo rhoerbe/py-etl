@@ -495,7 +495,7 @@ class ODBC_Connector (object) :
             fields      = self.fields [tbl]
             self.cursor.execute \
                 ('select %s from %s' % (','.join (fields), self.table))
-            for n, row in enumerate (self.cursor) :
+            for n, row in enumerate (self.cursor.fetchall ()) :
                 if (n % 100) == 0 or self.args.verbose :
                     self.log.debug (n)
                 idx = fields.index ('pk_uniqueid')
