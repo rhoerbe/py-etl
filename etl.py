@@ -472,11 +472,11 @@ class ODBC_Connector (object) :
 
     def initial_load (self) :
         self.generate_initial_tree ()
-        for dn, db in zip (self.args.base_dn, self.args.databases) :
+        for bdn, db in zip (self.args.base_dn, self.args.databases) :
             self.db = db
-            self.dn = dn
-            self.ldap.set_dn (dn)
-            self.log.debug (db)
+            self.dn = bdn
+            self.ldap.set_dn (self.dn)
+            self.log.debug ("%s: %s" % (db, self.dn))
             # Get all unique ids currently in ldap under our tree
             self.uidmap = {}
             r = self.ldap.search \
@@ -503,9 +503,9 @@ class ODBC_Connector (object) :
                     del self.uidmap [uid]
                 self.sync_to_ldap (row, is_new = True)
             for u in sorted (self.uidmap) :
-                dn = self.uidmap [u]
-                print ("Deleting: %s: %s" % (u, dn))
-                r = self.ldap.delete (dn)
+                udn = self.uidmap [u]
+                self.log.warn ("Deleting: %s: %s" % (u, udn))
+                r = self.ldap.delete (udn)
                 if not r :
                     msg = \
                         ( "Error on LDAP delete: "
