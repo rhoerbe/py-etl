@@ -1,10 +1,12 @@
 #!/bin/sh -e
 
-/opt/bin/ldaptest.py -2 iter | diff /opt/bin/testdata/ldapII.txt -
+/opt/bin/ldaptest.py --base-dn2 o=BMUKK -2 iter | \
+    diff /opt/bin/testdata/ldapII.txt -
 /opt/bin/testdriver.py -A 4731 -A 4732 deluids
 /opt/bin/etl.py -c postgres -i 00000000000000000000000000000000 -t \
     -d ou=user,ou=ph08,o=BMUKK initial_load
-/opt/bin/ldaptest.py -2 iter | diff /opt/bin/testdata/ldap00.txt -
+/opt/bin/ldaptest.py --base-dn2 o=BMUKK -2 iter | \
+    diff /opt/bin/testdata/ldap00.txt -
 for test in 01 02 03 04 05 06 07 ; do
     /opt/bin/testdriver.py -A $test update
     /opt/bin/testdriver.py wait_for_sync

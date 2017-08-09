@@ -495,7 +495,8 @@ class ODBC_Connector (object) :
             self.cursor.execute \
                 ('select %s from %s' % (','.join (fields), self.table))
             for n, row in enumerate (self.cursor) :
-                self.log.debug (n)
+                if (n % 100) == 0 or self.args.verbose :
+                    self.log.debug (n)
                 idx = fields.index ('pk_uniqueid')
                 uid = "%d" % row [idx]
                 if uid in self.uidmap :
@@ -541,9 +542,11 @@ class ODBC_Connector (object) :
         if ldrec :
             if is_new :
                 # Log a warning but continue like a normal sync
+                # During initial_load issue warning only if verbose
                 msg = 'Found pk_uniqueid "%s" when sync says it should be new' \
                     % uid
-                self.log.warn (msg)
+                if self.args.verbose or self.args.action != 'initial_load' :
+                    self.log.warn (msg)
                 self.warning_message = msg
             # Ensure we use the same IV for comparison
             pw = ldrec ['attributes'].get ('idnDistributionPassword', '')
@@ -590,7 +593,7 @@ class ODBC_Connector (object) :
                 dn = cn + ',' + dn.split (',', 1)[-1]
             if 'idnDistributionPassword' in ld_update :
                 self.ldap.extend.standard.modify_password \
-                    (dn, new_password = rw ['passwort'])
+                    (dn, new_password = rw ['passwort'].encode ('utf-8'))
             if ld_update or ld_delete :
                 changes = {}
                 for k in ld_update :
@@ -729,6 +732,12 @@ def main () :
     cmd.add_argument \
         ( '-t', '--terminate'
         , help    = "Terminate container after initial_load"
+        , action  = "store_true"
+        , default = False
+        )
+    cmd.add_argument \
+        ( '-v', '--verbose'
+        , help    = "Verbose logging"
         , action  = "store_true"
         , default = False
         )
