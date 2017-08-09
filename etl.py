@@ -645,7 +645,7 @@ class ODBC_Connector (object) :
                 return msg
             if 'idnDistributionPassword' in ld_update :
                 self.ldap.extend.standard.modify_password \
-                    (dn, new_password = rw ['passwort'])
+                    (dn, new_password = rw ['passwort'].encode ('utf-8'))
     # end def sync_to_ldap
 
     def to_ldap (self, item, dbkey) :
