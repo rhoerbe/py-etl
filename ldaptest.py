@@ -128,7 +128,9 @@ class LDAP_Access (object) :
         # leaf-node, it will search the whole database sequentially
         # for sub-nodes here. So since we know the structure we
         # don't recurse here.
-        if len (r ['dn'].split (',')) < 4 :
+        # Removed this workaround, seems to occur only with paged
+        # search which is no longer the default.
+        if True or len (r ['dn'].split (',')) < 4 :
             dns = self.dn_set (basedn)
             for dn in sorted (dns, key = lambda x : x.lower ()) :
                 if dn == basedn :
