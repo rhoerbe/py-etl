@@ -464,38 +464,49 @@ class ODBC_Connector (object) :
     def generate_initial_tree (self) :
         """ Check if initial tree exists, generate if non-existing
         """
-        top = None
         for dn in self.args.base_dn :
-            dnparts = dn.split (',')
-            bdn = ''
-            for dn in reversed (dnparts) :
-                if top is None :
-                    top = dn
-                if bdn :
-                    bdn = ','.join ((dn, bdn))
-                else :
-                    bdn = dn
-                entry = self.ldap.get_by_dn (bdn, base_dn = top)
-                k, v  = dn.split ('=', 1)
-                if entry :
-                    assert entry ['attributes'][k] in (v, [v])
-                    continue
-                d = {k : v}
-                if k == 'o' :
-                    d ['objectClass'] = 'Organization'
-                else :
-                    d ['objectClass'] = 'organizationalUnit'
-                r = self.ldap.add (bdn, attributes = d)
-                if not r :
-                    msg = \
-                        ( "Error on LDAP add: "
-                          "%(description)s: %(message)s"
-                          " (code: %(result)s)"
-                        % self.ldap.result
-                        )
-                    self.log.error (msg)
-                    self.log.error ("DN: %s, Attributes were: %s" % (bdn, d))
+            rdn_lists = []
+            spdn = dn.split (',')
+            rdn_lists.append (spdn)
+            if spdn [0] == 'ou=user' :
+                rdn_lists.append (['ou=ETD', 'ou=idnSync'] + spdn [1:])
+            for rdns in rdn_lists :
+                self.generate_rdns (rdns)
     # end def generate_initial_tree
+
+    def generate_rdns (self, rdns) :
+        """ Generate a top-down list of RDNs
+        """
+        top = None
+        bdn = ''
+        for dn in reversed (rdns) :
+            if top is None :
+                top = dn
+            if bdn :
+                bdn = ','.join ((dn, bdn))
+            else :
+                bdn = dn
+            entry = self.ldap.get_by_dn (bdn, base_dn = top)
+            k, v  = dn.split ('=', 1)
+            if entry :
+                assert entry ['attributes'][k] in (v, [v])
+                continue
+            d = {k : v}
+            if k == 'o' :
+                d ['objectClass'] = 'Organization'
+            else :
+                d ['objectClass'] = 'organizationalUnit'
+            r = self.ldap.add (bdn, attributes = d)
+            if not r :
+                msg = \
+                    ( "Error on LDAP add: "
+                      "%(description)s: %(message)s"
+                      " (code: %(result)s)"
+                    % self.ldap.result
+                    )
+                self.log.error (msg)
+                self.log.error ("DN: %s, Attributes were: %s" % (bdn, d))
+    # end def generate_rdns
 
     def get_passwords (self) :
         self.passwords = dict ()
