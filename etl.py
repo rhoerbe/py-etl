@@ -17,8 +17,8 @@ from binascii         import hexlify, unhexlify
 
 def log (msg) :
     """ FIXME: We want real logging someday """
-    print (msg)
-    sys.stdout.flush ()
+    print (msg, file = sys.stderr)
+    sys.stderr.flush ()
 # end def log
 
 class LDAP_Access (object) :
@@ -293,6 +293,44 @@ class ODBC_Connector (object) :
                 time.sleep (self.args.sleeptime)
     # end def action
 
+    def db_iter (self, db) :
+        self.cnx    = pyodbc.connect (DSN = db)
+        self.cursor = self.cnx.cursor ()
+        tbl         = self.table
+        fields      = self.fields [tbl]
+        self.cursor.execute \
+            ( 'select %s from %s order by pk_uniqueid'
+            % (','.join (fields), tbl)
+            )
+        # Looks like db15 is too large. Fetch rows one-by-one and
+        # restart with latests pk_uniqueid
+        if db.endswith ('15') :
+            count = 0
+            uid   = None
+            idx   = fields.index ('pk_uniqueid')
+            done  = False
+            while not done :
+                try :
+                    for n, row in enumerate (self.cursor) :
+                        uid = row [idx]
+                        yield ((count + n, row))
+                    done = True
+                except pyodbc.Error as cause :
+                    count = n
+                    self.log.warning \
+                        ("Oracle error, trying to continue: %s" % cause)
+                    self.cursor.execute \
+                        ( 'select %s from %s where pk_uniqueid > ? '
+                          'order by pk_uniqueid'
+                        % (','.join (fields), tbl)
+                        , uid
+                        )
+        else :
+            # fetchall is *much* faster
+            for n, row in enumerate (self.cursor.fetchall ()) :
+                yield ((n, row))
+    # end def db_iter
+
     def delete_in_ldap (self, pk_uniqueid) :
         uid = self.to_ldap (pk_uniqueid, 'pk_uniqueid')
         ldrec = self.ldap.get_entry (uid)
@@ -473,6 +511,8 @@ class ODBC_Connector (object) :
 
     def initial_load (self) :
         self.generate_initial_tree ()
+        tbl     = self.table
+        fields  = self.fields [tbl]
         for bdn, db in zip (self.args.base_dn, self.args.databases) :
             self.db = db
             self.dn = bdn
@@ -490,14 +530,8 @@ class ODBC_Connector (object) :
                     uid = entry ['attributes']['phonlineUniqueId']
                     self.uidmap [uid] = entry ['dn']
                     assert entry ['dn'].endswith (self.dn)
-            self.cnx    = pyodbc.connect (DSN = db)
-            self.cursor = self.cnx.cursor ()
-            tbl         = self.table
-            fields      = self.fields [tbl]
-            self.cursor.execute \
-                ('select %s from %s' % (','.join (fields), self.table))
-            for n, row in enumerate (self.cursor.fetchall ()) :
-                if (n % 100) == 0 or self.args.verbose :
+            for n, row in self.db_iter (db) :
+                if (n % 1000) == 0 or self.args.verbose :
                     self.log.debug (n)
                 idx = fields.index ('pk_uniqueid')
                 uid = "%d" % row [idx]
@@ -639,9 +673,9 @@ class ODBC_Connector (object) :
             if not r :
                 msg = \
                     ( "Error on LDAP add: %(description)s: %(message)s"
-                      " (code: %(result)s)"
+                      " (code: %(result)s) "
                     % self.ldap.result
-                    )
+                    ) + 'DN: %s, uid: %s, attributes: %s' % (dn, uid, ld_update)
                 self.log.error (msg)
                 return msg
             if 'idnDistributionPassword' in ld_update :
