@@ -14,6 +14,7 @@ from datetime         import datetime
 from ldaptimestamp    import LdapTimeStamp
 from aes_pkcs7        import AES_Cipher
 from binascii         import hexlify, unhexlify
+from traceback        import format_exc
 
 def log (msg) :
     """ FIXME: We want real logging someday """
@@ -32,16 +33,21 @@ class LDAP_Access (object) :
         self.srv   = Server (self.args.uri, get_info = SCHEMA)
         self.ldcon = Connection \
             (self.srv, self.args.bind_dn, self.args.password)
-        self.ldcon.bind ()
-        if not self.ldcon.bound :
-            msg = \
-                ( "Error on LDAP bind: %(description)s: %(message)s"
-                  " (code: %(result)s)"
-                % self.ldcon.result
-                )
-            self.log.error (msg)
-            sys.exit (23)
+        self.bind_ldap ()
     # end def __init__
+
+    def bind_ldap (self) :
+        while not self.ldcon.bound :
+            self.ldcon.bind ()
+            if not self.ldcon.bound :
+                msg = \
+                    ( "Error on LDAP bind: %(description)s: %(message)s"
+                      " (code: %(result)s)"
+                    % self.ldcon.result
+                    )
+                self.log.error (msg)
+                time.sleep (5)
+    # end def bind_ldap
 
     def get_by_dn (self, dn, base_dn = None) :
         """ Get entry by dn
@@ -811,7 +817,12 @@ def main () :
             args.databases.append (db)
 
     odbc = ODBC_Connector (args)
-    odbc.action ()
+    try :
+        odbc.action ()
+    except Exception :
+        log (format_exc ())
+        while True :
+            time.sleep (60)
 # end def main
 
 if __name__ == '__main__' :
