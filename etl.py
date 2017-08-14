@@ -104,6 +104,8 @@ def from_db_date (item) :
         Also note: the seconds always contain a trailing '.0' in the
         original LDAP tree.
     """
+    if item is None :
+        return item
     return item.strftime ("%Y-%m-%d %H:%M:%S") + '.0'
 # end def from_db_date
 
@@ -293,39 +295,39 @@ class ODBC_Connector (object) :
                 time.sleep (self.args.sleeptime)
     # end def action
 
+    def db_iter_part (self, count, start = 0, end = None) :
+        fields = self.fields [self.table]
+        sql    = 'select %s from %s where pk_uniqueid >= ?'
+        params = [start]
+        if end :
+            sql += ' and pk_uniqueid < ?'
+            params.append (end)
+        self.cursor.execute \
+            (sql  % (','.join (fields), self.table), *params)
+        for n, row in enumerate (self.cursor) :
+            yield ((n + count, row))
+    # end def db_iter_part
+
     def db_iter (self, db) :
         self.cnx    = pyodbc.connect (DSN = db)
         self.cursor = self.cnx.cursor ()
         tbl         = self.table
         fields      = self.fields [tbl]
-        self.cursor.execute \
-            ( 'select %s from %s order by pk_uniqueid'
-            % (','.join (fields), tbl)
-            )
-        # Looks like db15 is too large. Fetch rows one-by-one and
-        # restart with latests pk_uniqueid
         if db.endswith ('15') :
             count = 0
-            uid   = None
-            idx   = fields.index ('pk_uniqueid')
-            done  = False
-            while not done :
-                try :
-                    for n, row in enumerate (self.cursor) :
-                        uid = row [idx]
-                        yield ((count + n, row))
-                    done = True
-                except pyodbc.Error as cause :
-                    count = n
-                    self.log.warning \
-                        ("Oracle error, trying to continue: %s" % cause)
-                    self.cursor.execute \
-                        ( 'select %s from %s where pk_uniqueid > ? '
-                          'order by pk_uniqueid'
-                        % (','.join (fields), tbl)
-                        , uid
-                        )
+            self.cursor.execute ('select pk_uniqueid from %s' % (tbl))
+            uids = self.cursor.fetchall ()
+            uids = tuple (u [0] for u in sorted (uids, key = lambda x : x [0]))
+            last = 0
+            for i in range (1000, len (uids), 1000) :
+                for x, row in self.db_iter_part (count, last, uids [i]) :
+                    yield ((x, row))
+                count = x
+                last  = uids [i]
+            for x, row in self.db_iter_part (count, last) :
+                yield ((x, row))
         else :
+            self.cursor.execute ('select %s from %s' % (','.join (fields), tbl))
             # fetchall is *much* faster
             for n, row in enumerate (self.cursor.fetchall ()) :
                 yield ((n, row))
