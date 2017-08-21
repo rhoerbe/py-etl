@@ -151,6 +151,9 @@ def from_multi (item) :
     """
     if item is None :
         return item
+    item = item.strip ()
+    if not item :
+        return None
     return item.split (';')
 # end def from_multi
 
@@ -247,18 +250,19 @@ class ODBC_Connector (object) :
         )
 
     data_conversion = dict \
-        ( geburtsdatum    = from_db_date
-        , ident_nr        = from_db_number
-        , person_nr       = from_db_number
-        , st_person_nr    = from_db_number
-        , pk_uniqueid     = from_db_number
-        , funktionen      = from_multi
-        , schulkennzahlen = from_multi
-        , emailadresse_b  = from_db_rstrip
-        , emailadresse_st = from_db_rstrip
-        , benutzername    = from_db_strip
-        , vorname         = from_db_rstrip
-        , nachname        = from_db_rstrip
+        ( geburtsdatum          = from_db_date
+        , ident_nr              = from_db_number
+        , person_nr             = from_db_number
+        , st_person_nr          = from_db_number
+        , pk_uniqueid           = from_db_number
+        , funktionen            = from_multi
+        , schulkennzahlen       = from_multi
+        , emailadresse_b        = from_db_rstrip
+        , emailadresse_st       = from_db_rstrip
+        , benutzername          = from_db_strip
+        , vorname               = from_db_rstrip
+        , nachname              = from_db_rstrip
+        , pm_sap_personalnummer = from_db_rstrip
         )
     event_types = \
         { 4.0   : 'delete'
