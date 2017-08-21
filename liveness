@@ -1,0 +1,21 @@
+#!/usr/bin/python
+
+import os
+import sys
+import time
+
+fn = '/tmp/liveness'
+sleeptime = int (os.environ.get ('ETL_SLEEPTIME', '20'))
+try :
+    stat = os.stat (fn)
+except OSError as cause :
+    print ('Cannot stat "%s": %s' % (fn, cause))
+    sys.exit (1)
+
+now = time.time ()
+if now - stat.st_mtime > 2 * sleeptime + 60 :
+    print ('Liveness check: Too old')
+    sys.exit (1)
+
+# Explicit is better than implicit...
+sys.exit (0)

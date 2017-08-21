@@ -295,6 +295,7 @@ class ODBC_Connector (object) :
             self.initial_load ()
         else :
             while True :
+                open ('/tmp/liveness', 'w').close ()
                 for dn, db in zip (self.args.base_dn, self.args.databases) :
                     self.db = db
                     self.dn = dn
