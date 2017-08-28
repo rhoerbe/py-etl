@@ -523,14 +523,17 @@ class ODBC_Connector (object) :
 
     def get_passwords (self) :
         self.passwords = dict ()
-        with open ('/etc/conf/passwords', 'r') as f :
-            for line in f :
-                line = line.strip ()
-                if line.startswith ('DATABASE_PASSWORDS') :
-                    pws = line.split ('=', 1)[-1].strip ()
-                    for entry in pws.split (',') :
-                        db, pw = (x.strip () for x in entry.split (':', 1))
-                        self.passwords [db] = pw
+        try :
+            with open ('/etc/conf/passwords', 'r') as f :
+                for line in f :
+                    line = line.strip ()
+                    if line.startswith ('DATABASE_PASSWORDS') :
+                        pws = line.split ('=', 1)[-1].strip ()
+                        for entry in pws.split (',') :
+                            db, pw = (x.strip () for x in entry.split (':', 1))
+                            self.passwords [db] = pw
+        except FileNotFoundError :
+            return
     # end def get_passwords
 
     def initial_load (self) :
@@ -765,12 +768,15 @@ def main () :
     # Also get password-encryption password when we're at it
     ldap_pw = 'changeme'
     pw_encr = 'changemetoo*****' # must be 16 characters long after encoding
-    with open ('/etc/conf/passwords', 'r') as f :
-        for line in f :
-            if line.startswith ('LDAP_PASSWORD') :
-                ldap_pw = line.split ('=', 1) [-1].strip ()
-            if line.startswith ('PASSWORD_ENCRYPTION_PASSWORD') :
-                pw_encr = line.split ('=', 1) [-1].strip ()
+    try :
+        with open ('/etc/conf/passwords', 'r') as f :
+            for line in f :
+                if line.startswith ('LDAP_PASSWORD') :
+                    ldap_pw = line.split ('=', 1) [-1].strip ()
+                if line.startswith ('PASSWORD_ENCRYPTION_PASSWORD') :
+                    pw_encr = line.split ('=', 1) [-1].strip ()
+    except FileNotFoundError :
+        pass
     cmd.add_argument \
         ( "-P", "--password"
         , help    = "Password(s) for binding to LDAP"
