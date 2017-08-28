@@ -22,6 +22,9 @@ def log (msg) :
     sys.stderr.flush ()
 # end def log
 
+class ApplicationError (Exception) :
+    pass
+
 class LDAP_Access (object) :
 
     def __init__ (self, args) :
@@ -300,8 +303,11 @@ class ODBC_Connector (object) :
                     self.db = db
                     self.dn = dn
                     self.ldap.set_dn (dn)
-                    self.cnx    = pyodbc.connect (DSN = db)
-                    self.cursor = self.cnx.cursor ()
+                    try :
+                        self.cnx    = pyodbc.connect (DSN = db)
+                        self.cursor = self.cnx.cursor ()
+                    except Exception as cause :
+                        raise (ApplicationError (cause))
                     self.etl ()
                 time.sleep (self.args.sleeptime)
     # end def action
@@ -830,6 +836,10 @@ def main () :
     odbc = ODBC_Connector (args)
     try :
         odbc.action ()
+    except ApplicationError as cause :
+        log (str (cause))
+        while True :
+            time.sleep (60)
     except Exception :
         log (format_exc ())
         while True :
