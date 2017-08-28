@@ -19,8 +19,9 @@ Several scripts here
 - aes_pkcs7.py is used for password encryption (see below).
 - ldaptimestamp.py for generating timestamps of last sync.
 - Test drivers as well as test data for regression testing.
-- A script for liveness checking: During normal etl run, etl.py updates
-  a file ``/tmp/liveness``. The `liveness`` check tests that the file is
+- A script for liveness checking: With each wakeup in the polling loop,
+  etl.py updates a file ``/tmp/liveness``.
+  The ``liveness`` check tests that the file is
   recent enough and returns an appropriate return code (and an optional
   message on standard error).
 - In addition some tools to dump out (part of) a database into a csv
