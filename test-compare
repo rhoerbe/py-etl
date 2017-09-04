@@ -12,3 +12,5 @@ for test in 01 02 03 04 05 06 07 ; do
     /opt/bin/testdriver.py wait_for_sync
     /opt/bin/ldaptest.py -2 iter | diff /opt/bin/testdata/ldap$test.txt -
 done
+opt/bin/ldaptest.py --base-dn2 ou=user,ou=ph15,o=BMUKK -2 iter | \
+    diff /opt/bin/testdata/ldapI15.txt -

@@ -68,9 +68,10 @@ class LDAP_Access (object) :
             return self.ldcon.response [0]
     # end def get_by_dn
 
-    def get_entry (self, pk_uniqueid) :
+    def get_entry (self, pk_uniqueid, dn = None) :
+        dn = dn or self.dn
         r = self.ldcon.search \
-            ( self.dn, '(phonlineUniqueId=%s)' % pk_uniqueid
+            ( dn, '(phonlineUniqueId=%s)' % pk_uniqueid
             , search_scope = LEVEL
             , attributes   = ALL_ATTRIBUTES
             )
@@ -291,12 +292,18 @@ class ODBC_Connector (object) :
         self.data_conversion = dict (self.data_conversion)
         # and add a bound method
         self.data_conversion ['passwort'] = self.from_password
+        self.has_ph15 = False
+        if self.args.action == 'etl' :
+            for dn in self.args.base_dn :
+                if 'ph15' in dn :
+                    self.has_ph15 = True
+                    break
     # end def __init__
 
     def action (self) :
         if self.args.action == 'initial_load' :
             self.initial_load ()
-        else :
+        elif self.args.action == 'etl' :
             while True :
                 open ('/tmp/liveness', 'w').close ()
                 for dn, db in zip (self.args.base_dn, self.args.databases) :
@@ -310,6 +317,8 @@ class ODBC_Connector (object) :
                         raise (ApplicationError (cause))
                     self.etl ()
                 time.sleep (self.args.sleeptime)
+        else :
+            raise ValueError ('Invalid action: %s' % self.args.action)
     # end def action
 
     def db_iter_part (self, count, start = 0, end = None) :
@@ -661,6 +670,7 @@ class ODBC_Connector (object) :
                 del ld_update ['cn']
                 dn = cn + ',' + dn.split (',', 1)[-1]
             if 'idnDistributionPassword' in ld_update :
+                self.update_password_ph15 (uid, rw ['passwort'])
                 self.ldap.extend.standard.modify_password \
                     (dn, new_password = rw ['passwort'].encode ('utf-8'))
             if ld_update or ld_delete :
@@ -715,6 +725,39 @@ class ODBC_Connector (object) :
                 self.ldap.extend.standard.modify_password \
                     (dn, new_password = rw ['passwort'].encode ('utf-8'))
     # end def sync_to_ldap
+
+    def update_password_ph15 (self, uid, password) :
+        """ Write password through to ph15 if password changes on
+            another instance: Sync of the database may take too long so
+            we optimize this for password changes. The password will
+            probably later be synced to ph15 explicitly again.
+        """
+        # If we're working on ph15 now or no ph15: nothing to do
+        if not self.has_ph15 or 'ph15' in self.dn :
+            return
+        offset = self.dn.index ('ou=ph')
+        assert (offset > 0)
+        dn15  = self.dn [0:offset] + 'ou=ph15' + self.dn [offset+7:]
+        ldrec = self.ldap.get_entry (uid, dn = dn15)
+        dn    = ldrec ['dn']
+        # If record doesn't exist in ph15 we do nothing
+        if not ldrec :
+            return
+        self.ldap.extend.standard.modify_password \
+            (dn, new_password = password.encode ('utf-8'))
+        self.crypto_iv = self.args.crypto_iv
+        v = self.to_ldap (password, 'passwort')
+        change = dict (idnDistributionPassword = (MODIFY_REPLACE, v))
+        r = self.ldap.modify (dn, change)
+        if not r :
+            msg = \
+                ( "Error on LDAP modify (password ph15): "
+                  "%(description)s: %(message)s"
+                  " (code: %(result)s)"
+                % self.ldap.result
+                )
+            self.log.error (msg + str (change))
+    # end def update_password_ph15
 
     def to_ldap (self, item, dbkey) :
         conv = self.data_conversion.get (dbkey)
