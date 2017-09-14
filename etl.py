@@ -745,10 +745,11 @@ class ODBC_Connector (object) :
         assert (offset > 0)
         dn15  = self.dn [0:offset] + 'ou=ph15' + self.dn [offset+7:]
         ldrec = self.ldap.get_entry (uid, dn = dn15)
-        dn    = ldrec ['dn']
         # If record doesn't exist in ph15 we do nothing
         if not ldrec :
+            self.log.warn ("DN %s not in ph15" % dn15)
             return
+        dn    = ldrec ['dn']
         self.ldap.extend.standard.modify_password \
             (dn, new_password = password.encode ('utf-8'))
         self.crypto_iv = self.args.crypto_iv
