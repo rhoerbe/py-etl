@@ -422,12 +422,18 @@ class ODBC_Connector (object) :
                     )
                 self.error (msg)
                 continue
+            self.warning_message = None
             sql = 'select %s from %s where pk_uniqueid = ?'
             sql = sql % (','.join (self.fields [self.table]), self.table)
             self.cursor.execute (sql, uid)
             usr = self.cursor.fetchall ()
-            assert len (usr) <= 1
-            self.warning_message = None
+            if len (usr) > 1 :
+                msg = "Duplicate pk_uniqueid: %s" % uid
+                updates [rw.record_id] = dict \
+                    ( error_message = msg
+                    , status        = 'W'
+                    )
+                self.log.warn (msg)
             if len (usr) :
                 if event_type == 'delete' :
                     msg = 'Record %s existing in DB' % uid
