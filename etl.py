@@ -336,6 +336,8 @@ class ODBC_Connector (object) :
                     except Exception as cause :
                         raise (ApplicationError (cause))
                     self.etl ()
+                    self.cursor.close ()
+                    self.cnx.close ()
                 self.verbose ("Sleeping: %s" % self.args.sleeptime)
                 time.sleep (self.args.sleeptime)
         else :
