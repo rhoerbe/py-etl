@@ -415,6 +415,11 @@ class ODBC_Connector (object) :
         tbl    = 'eventlog_ph'
         fields = self.fields [tbl]
         if self.db in self.read_only :
+            # Note: The limit below (max_records) interacts badly with
+            # limiting the records by date: We don't see all records for
+            # a certain date/time in a single run. So we would have to
+            # keep the date and use different ranges of records (and
+            # hope that nothing changes until the next run).
             max_evdate = self.read_only [self.db]
             sql  = "select %s from %s where event_time > "
             if self.db == 'postgres' :
@@ -426,16 +431,16 @@ class ODBC_Connector (object) :
         else :
             sql = "select %s from %s where status in ('N', 'E')"
         if self.db == 'postgres' :
-            sql += ' limit 1000'
+            sql += ' limit %s' % self.args.max_records
         else :
-            sql += ' and rownum <= 1000'
+            sql += ' and rownum <= %s' % self.args.max_records
         sql = sql % (', '.join (fields), tbl)
         self.cursor.execute (sql)
         updates = {}
         rows = self.cursor.fetchall ()
         self.verbose ("Eventlog query done, %s rows" % len (rows))
         self.do_sleep = True
-        if len (rows) >= 1000 :
+        if len (rows) >= max_records :
             self.do_sleep = False
         for row in rows :
             rw = Namespace ((k, row [i]) for i, k in enumerate (fields))
@@ -892,6 +897,12 @@ def main () :
         ( "-i", "--crypto-iv"
         , help    = "You can pass in a fixed crypto initialisation vector"
                     " for regression testing -- don't do this in production!"
+        )
+    cmd.add_argument \
+        ( '-m', '--max-records'
+        , help    = "Maximum number of records per etl run"
+        , type    = int
+        , default = 100
         )
     cmd.add_argument \
         ( '-o', '--output-file'
