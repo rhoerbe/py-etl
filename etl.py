@@ -440,7 +440,7 @@ class ODBC_Connector (object) :
         rows = self.cursor.fetchall ()
         self.verbose ("Eventlog query done, %s rows" % len (rows))
         self.do_sleep = True
-        if len (rows) >= max_records :
+        if len (rows) >= self.args.max_records :
             self.do_sleep = False
         for row in rows :
             rw = Namespace ((k, row [i]) for i, k in enumerate (fields))
