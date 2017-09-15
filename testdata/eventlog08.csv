@@ -1,0 +1,2 @@
+record_id;table_key;status;event_type;event_time;perpetrator;table_name;column_name;old_value;new_value;synch_id;synch_online_flag;transaction_flag;read_time;error_message;attempt;admin_notify_flag
+1000003330166;pk_uniqueid=4733;N;5;2017-09-15 20:54:00;hand-edited;benutzer_alle_dirxml_v;;;;47110815.0;N;N;;;1.0;N
