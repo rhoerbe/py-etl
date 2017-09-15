@@ -804,6 +804,7 @@ class ODBC_Connector (object) :
             if 'idnDistributionPassword' in ld_update :
                 self.ldap.extend.standard.modify_password \
                     (dn, new_password = rw ['passwort'].encode ('utf-8'))
+            self.create_record_ph15 (uid, rw, ld_update)
     # end def sync_to_ldap
 
     def update_password_ph15 (self, uid, password) :
@@ -812,13 +813,13 @@ class ODBC_Connector (object) :
             we optimize this for password changes. The password will
             probably later be synced to ph15 explicitly again.
         """
+        # For initial load we don't write passwords to other instances:
+        if self.args.action != 'etl' :
+            return
         # If we're working on ph15 now or no ph15: nothing to do
         if not self.has_ph15 or 'ph15' in self.dn :
             return
-        offset = self.dn.index ('ou=ph')
-        assert (offset > 0)
-        dn15  = self.dn [0:offset] + 'ou=ph15' + self.dn [offset+7:]
-        ldrec = self.ldap.get_entry (uid, dn = dn15)
+        ldrec = self.ldap.get_entry (uid, dn = self.dn15)
         # If record doesn't exist in ph15 we do nothing
         if not ldrec :
             self.log.warn ("Uid %s not in ph15" % uid)
@@ -840,6 +841,33 @@ class ODBC_Connector (object) :
             self.log.error (msg + str (change))
         self.verbose ("Changed password for %s" % dn)
     # end def update_password_ph15
+
+    def create_record_ph15 (self, uid, rw, ld_update) :
+        # For initial load we don't write to other instances:
+        if self.args.action != 'etl' :
+            return
+        # If we're working on ph15 now or no ph15: nothing to do
+        if not self.has_ph15 or 'ph15' in self.dn :
+            return
+        ldrec = self.ldap.get_entry (uid, dn = self.dn15)
+        if ldrec :
+            self.log.warn ("Uid %s already in ph15" % uid)
+            return
+        dn = ('cn=%s,' % ld_update ['cn']) + self.dn15
+        r  = self.ldap.add (dn, attributes = ld_update)
+        self.verbose ("Added dn: %s" % dn)
+        if not r :
+            msg = \
+                ( "Error on LDAP add: %(description)s: %(message)s"
+                  " (code: %(result)s) "
+                % self.ldap.result
+                ) + 'DN: %s, uid: %s, attributes: %s' % (dn, uid, ld_update)
+            self.log.error (msg)
+            return msg
+        if 'idnDistributionPassword' in ld_update :
+            self.ldap.extend.standard.modify_password \
+                (dn, new_password = rw ['passwort'].encode ('utf-8'))
+    # end def create_record_ph15
 
     def to_ldap (self, item, dbkey) :
         conv = self.data_conversion.get (dbkey)
@@ -863,6 +891,13 @@ class ODBC_Connector (object) :
         if self.args.verbose and self.args.action != 'initial_load' :
             self.log.debug (msg)
     # end def verbose
+
+    @property
+    def dn15 (self) :
+        offset = self.dn.index ('ou=ph')
+        assert (offset > 0)
+        return self.dn [0:offset] + 'ou=ph15' + self.dn [offset+7:]
+    # end def dn15
 
 # end class ODBC_Connector
 
