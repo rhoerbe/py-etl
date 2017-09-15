@@ -21,6 +21,11 @@ def log_debug (msg) :
     sys.stderr.flush ()
 # end def log_debug
 
+def log_info (msg) :
+    print ("Info:", msg, file = sys.stderr)
+    sys.stderr.flush ()
+# end def log_info
+
 def log_warn (msg) :
     print ("Warning:", msg, file = sys.stderr)
     sys.stderr.flush ()
@@ -43,6 +48,7 @@ class LDAP_Access (object) :
         self.log ['debug'] = log_debug
         self.log ['error'] = log_error
         self.log ['warn']  = log_warn
+        self.log ['info']  = log_info
 
         self.srv   = Server (self.args.uri, get_info = SCHEMA)
         self.ldcon = Connection \
@@ -295,6 +301,7 @@ class ODBC_Connector (object) :
         self.log ['debug'] = log_debug
         self.log ['error'] = log_error
         self.log ['warn']  = log_warn
+        self.log ['info']  = log_info
         self.ldap      = LDAP_Access (self.args)
         self.verbose ("Bound to ldap")
         self.table     = 'benutzer_alle_dirxml_v'
@@ -414,6 +421,10 @@ class ODBC_Connector (object) :
                  % (dtfun, max_evdate.strftime ('%Y-%m-%d.%H:%M:%S'))
         else :
             sql = "select %s from %s where status in ('N', 'E')"
+        if self.db == 'postgres' :
+            sql += ' limit 1000'
+        else :
+            sql += ' and rownum <= 1000'
         sql = sql % (', '.join (fields), tbl)
         self.cursor.execute (sql)
         updates = {}
@@ -642,7 +653,7 @@ class ODBC_Connector (object) :
                         % self.ldap.result
                         )
                     self.log.error (msg)
-        self.log.warn ("SUCCESS")
+        self.log.info ("SUCCESS")
         sys.stdout.flush ()
         # Default is to wait forever after initial load
         if not self.args.terminate :
@@ -955,12 +966,12 @@ def main () :
         odbc.action ()
     except ApplicationError as cause :
         log_error (str (cause))
-        if not cmd.terminate :
+        if not args.terminate :
             while True :
                 time.sleep (60)
     except Exception :
         log_error (format_exc ())
-        if not cmd.terminate :
+        if not args.terminate :
             while True :
                 time.sleep (60)
 # end def main
