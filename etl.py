@@ -60,6 +60,8 @@ class LDAP_Access (object) :
                     % self.ldcon.result
                     )
                 self.log.error (msg)
+                if self.args.terminate :
+                    raise RuntimeError (msg)
                 time.sleep (5)
     # end def bind_ldap
 
@@ -420,7 +422,7 @@ class ODBC_Connector (object) :
                 ( "Eventlog id: %s type: %s status: %s"
                 % (rw.record_id, rw.event_type, rw.status)
                 )
-            if rw.event_time > max_evdate :
+            if self.db in self.read_only and rw.event_time > max_evdate :
                 max_evdate = rw.event_time
             if rw.event_type not in self.event_types :
                 msg = 'Invalid event_type: %s' % rw.event_type
@@ -951,12 +953,14 @@ def main () :
         odbc.action ()
     except ApplicationError as cause :
         log_error (str (cause))
-        while True :
-            time.sleep (60)
+        if not cmd.terminate :
+            while True :
+                time.sleep (60)
     except Exception :
         log_error (format_exc ())
-        while True :
-            time.sleep (60)
+        if not cmd.terminate :
+            while True :
+                time.sleep (60)
 # end def main
 
 if __name__ == '__main__' :
