@@ -288,24 +288,27 @@ class ODBC_Connector (object) :
 
     def __init__ (self, args) :
         self.args      = args
+        # FIXME: Poor-mans logger for now
+        self.log = Namespace ()
+        self.log ['debug'] = log_debug
+        self.log ['error'] = log_error
+        self.log ['warn']  = log_warn
         self.ldap      = LDAP_Access (self.args)
+        self.verbose ("Bound to ldap")
         self.table     = 'benutzer_alle_dirxml_v'
         self.crypto_iv = None
         if self.args.crypto_iv :
             self.crypto_iv = self.args.crypto_iv
         self.aes = AES_Cipher \
             (hexlify (self.args.encryption_password.encode ('utf-8')))
-        # FIXME: Poor-mans logger for now
-        self.log = Namespace ()
-        self.log ['debug'] = log_debug
-        self.log ['error'] = log_error
-        self.log ['warn']  = log_warn
         self.get_passwords ()
         # copy class dict to local dict
         self.data_conversion = dict (self.data_conversion)
         # and add a bound method
         self.data_conversion ['passwort'] = self.from_password
         self.has_ph15 = False
+        self.read_only = \
+            dict ((r, datetime (2017, 1, 1)) for r in self.args.read_only)
         if self.args.action == 'etl' :
             for dn in self.args.base_dn :
                 if 'ph15' in dn :
@@ -327,6 +330,7 @@ class ODBC_Connector (object) :
                         self.verbose ("DB-Connect: %s" % db)
                         self.cnx    = pyodbc.connect (DSN = db)
                         self.cursor = self.cnx.cursor ()
+                        self.verbose ("connected.")
                     except Exception as cause :
                         raise (ApplicationError (cause))
                     self.etl ()
@@ -395,12 +399,29 @@ class ODBC_Connector (object) :
     def etl (self) :
         tbl    = 'eventlog_ph'
         fields = self.fields [tbl]
-        sql = "select %s from %s where status in ('N', 'E')"
+        if self.db in self.read_only :
+            max_evdate = self.read_only [self.db]
+            sql  = "select %s from %s where event_time > "
+            if self.db == 'postgres' :
+                dtfun = 'to_timestamp'
+            else :
+                dtfun = 'to_date'
+            sql += "%s('%s', 'YYYY-MM-DD.HH24:MI:SS')" \
+                 % (dtfun, max_evdate.strftime ('%Y-%m-%d.%H:%M:%S'))
+        else :
+            sql = "select %s from %s where status in ('N', 'E')"
         sql = sql % (', '.join (fields), tbl)
         self.cursor.execute (sql)
         updates = {}
+        self.verbose ("Eventlog query done")
         for row in self.cursor.fetchall () :
             rw = Namespace ((k, row [i]) for i, k in enumerate (fields))
+            self.verbose \
+                ( "Eventlog id: %s type: %s status: %s"
+                % (rw.record_id, rw.event_type, rw.status)
+                )
+            if rw.event_time > max_evdate :
+                max_evdate = rw.event_time
             if rw.event_type not in self.event_types :
                 msg = 'Invalid event_type: %s' % rw.event_type
                 updates [rw.record_id] = dict \
@@ -498,16 +519,20 @@ class ODBC_Connector (object) :
             else :
                 updates [rw.record_id] = dict (status = 'S')
             updates [rw.record_id]['read_time'] = datetime.utcnow ()
-        for key in updates :
-            fn  = list (sorted (updates [key].keys ()))
-            sql = "update eventlog_ph set %s where record_id = ?"
-            sql = sql % ', '.join ('%s = ?' % k for k in fn)
-            #print (sql)
-            p   = list (updates [key][k] for k in fn)
-            p.append (float (key))
-            #print (p)
-            self.cursor.execute (sql, * p)
-        self.cursor.commit ()
+        if self.db in self.read_only :
+            self.read_only [self.db] = max_evdate
+            self.verbose ("Not updating eventlog")
+        else :
+            for key in updates :
+                fn  = list (sorted (updates [key].keys ()))
+                sql = "update eventlog_ph set %s where record_id = ?"
+                sql = sql % ', '.join ('%s = ?' % k for k in fn)
+                #print (sql)
+                p   = list (updates [key][k] for k in fn)
+                p.append (float (key))
+                #print (p)
+                self.cursor.execute (sql, * p)
+            self.cursor.commit ()
     # end def etl
 
     def generate_initial_tree (self) :
@@ -872,6 +897,12 @@ def main () :
         , help    = "Password(s) for encrypting passwords in LDAP"
         , default = pw_encr
         )
+    cmd.add_argument \
+        ( "-r", "--read-only"
+        , help    = "Databases given with this options will not write eventlog"
+        , default = []
+        , action  = 'append'
+        )
     sleeptime = int (os.environ.get ('ETL_SLEEPTIME', '20'))
     cmd.add_argument \
         ( '-s', '--sleeptime'
@@ -911,16 +942,19 @@ def main () :
                 ))
             args.base_dn.append   (dn)
             args.databases.append (db)
+    for db in args.read_only :
+        if db not in args.databases :
+            raise ApplicationError ("Invalid Database in read-only: %s" % db)
 
     odbc = ODBC_Connector (args)
     try :
         odbc.action ()
     except ApplicationError as cause :
-        log (str (cause))
+        log_error (str (cause))
         while True :
             time.sleep (60)
     except Exception :
-        log (format_exc ())
+        log_error (format_exc ())
         while True :
             time.sleep (60)
 # end def main
