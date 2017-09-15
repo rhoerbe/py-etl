@@ -16,11 +16,20 @@ from aes_pkcs7        import AES_Cipher
 from binascii         import hexlify, unhexlify
 from traceback        import format_exc
 
-def log (msg) :
-    """ FIXME: We want real logging someday """
+def log_debug (msg) :
     print (msg, file = sys.stderr)
     sys.stderr.flush ()
-# end def log
+# end def log_debug
+
+def log_warn (msg) :
+    print ("Warning:", msg, file = sys.stderr)
+    sys.stderr.flush ()
+# end def log_warn
+
+def log_error (msg) :
+    print ("Error:", msg, file = sys.stderr)
+    sys.stderr.flush ()
+# end def log_error
 
 class ApplicationError (Exception) :
     pass
@@ -31,7 +40,9 @@ class LDAP_Access (object) :
         self.args  = args
         # FIXME: Poor-mans logger for now
         self.log = Namespace ()
-        self.log ['debug'] = self.log ['error'] = self.log ['warn'] = log
+        self.log ['debug'] = log_debug
+        self.log ['error'] = log_error
+        self.log ['warn']  = log_warn
 
         self.srv   = Server (self.args.uri, get_info = SCHEMA)
         self.ldcon = Connection \
@@ -286,7 +297,9 @@ class ODBC_Connector (object) :
             (hexlify (self.args.encryption_password.encode ('utf-8')))
         # FIXME: Poor-mans logger for now
         self.log = Namespace ()
-        self.log ['debug'] = self.log ['error'] = self.log ['warn'] = log
+        self.log ['debug'] = log_debug
+        self.log ['error'] = log_error
+        self.log ['warn']  = log_warn
         self.get_passwords ()
         # copy class dict to local dict
         self.data_conversion = dict (self.data_conversion)
@@ -311,11 +324,13 @@ class ODBC_Connector (object) :
                     self.dn = dn
                     self.ldap.set_dn (dn)
                     try :
+                        self.verbose ("DB-Connect: %s" % db)
                         self.cnx    = pyodbc.connect (DSN = db)
                         self.cursor = self.cnx.cursor ()
                     except Exception as cause :
                         raise (ApplicationError (cause))
                     self.etl ()
+                self.verbose ("Sleeping: %s" % self.args.sleeptime)
                 time.sleep (self.args.sleeptime)
         else :
             raise ValueError ('Invalid action: %s' % self.args.action)
@@ -674,9 +689,12 @@ class ODBC_Connector (object) :
                     self.log.error (msg)
                     return msg
                 del ld_update ['cn']
-                dn = cn + ',' + dn.split (',', 1)[-1]
+                ndn = cn + ',' + dn.split (',', 1)[-1]
+                self.verbose ("Change dn: %s->%s" % (dn, ndn))
+                dn = ndn
             if 'idnDistributionPassword' in ld_update :
                 self.update_password_ph15 (uid, rw ['passwort'])
+                self.verbose ("Change password for dn: %s" % dn)
                 self.ldap.extend.standard.modify_password \
                     (dn, new_password = rw ['passwort'].encode ('utf-8'))
             if ld_update or ld_delete :
@@ -686,8 +704,10 @@ class ODBC_Connector (object) :
                         changes [k] = (MODIFY_REPLACE, ld_update [k])
                     else :
                         changes [k] = (MODIFY_REPLACE, [ld_update [k]])
+                    self.verbose ("Change %s for dn: %s" % (k, dn))
                 for k in ld_delete :
                     changes [k] = (MODIFY_DELETE, [])
+                    self.verbose ("Delete %s in dn: %s" % (k, dn))
                 r = self.ldap.modify (dn, changes)
                 if not r :
                     msg = \
@@ -719,6 +739,7 @@ class ODBC_Connector (object) :
             ld_update ['etlTimestamp'] = etl_ts
             dn = ('cn=%s,' % ld_update ['cn']) + self.dn
             r  = self.ldap.add (dn, attributes = ld_update)
+            self.verbose ("Added dn: %s" % dn)
             if not r :
                 msg = \
                     ( "Error on LDAP add: %(description)s: %(message)s"
@@ -747,7 +768,7 @@ class ODBC_Connector (object) :
         ldrec = self.ldap.get_entry (uid, dn = dn15)
         # If record doesn't exist in ph15 we do nothing
         if not ldrec :
-            self.log.warn ("DN %s not in ph15" % dn15)
+            self.log.warn ("Uid %s not in ph15" % uid)
             return
         dn    = ldrec ['dn']
         self.ldap.extend.standard.modify_password \
@@ -764,6 +785,7 @@ class ODBC_Connector (object) :
                 % self.ldap.result
                 )
             self.log.error (msg + str (change))
+        self.verbose ("Changed password for %s" % dn)
     # end def update_password_ph15
 
     def to_ldap (self, item, dbkey) :
@@ -781,6 +803,13 @@ class ODBC_Connector (object) :
             iv = unhexlify (self.crypto_iv)
         return self.aes.encrypt (item.encode ('utf-8'), iv).decode ('ascii')
     # end def from_password
+
+    def verbose (self, msg) :
+        """ Verbose message for etl sync only
+        """
+        if self.args.verbose and self.args.action != 'initial_load' :
+            self.log.debug (msg)
+    # end def verbose
 
 # end class ODBC_Connector
 
