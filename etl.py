@@ -323,6 +323,7 @@ class ODBC_Connector (object) :
                 if 'ph15' in dn :
                     self.has_ph15 = True
                     break
+        self.do_sleep = True
     # end def __init__
 
     def action (self) :
@@ -345,8 +346,11 @@ class ODBC_Connector (object) :
                     self.etl ()
                     self.cursor.close ()
                     self.cnx.close ()
-                self.verbose ("Sleeping: %s" % self.args.sleeptime)
-                time.sleep (self.args.sleeptime)
+                if self.do_sleep :
+                    self.verbose ("Sleeping: %s" % self.args.sleeptime)
+                    time.sleep (self.args.sleeptime)
+                else :
+                    self.verbose ("Not sleeping")
         else :
             raise ValueError ('Invalid action: %s' % self.args.action)
     # end def action
@@ -428,8 +432,12 @@ class ODBC_Connector (object) :
         sql = sql % (', '.join (fields), tbl)
         self.cursor.execute (sql)
         updates = {}
-        self.verbose ("Eventlog query done")
-        for row in self.cursor.fetchall () :
+        rows = self.cursor.fetchall ()
+        self.verbose ("Eventlog query done, %s rows" % len (rows))
+        self.do_sleep = True
+        if len (rows) >= 1000 :
+            self.do_sleep = False
+        for row in rows :
             rw = Namespace ((k, row [i]) for i, k in enumerate (fields))
             self.verbose \
                 ( "Eventlog id: %s type: %s status: %s"
