@@ -1,0 +1,20 @@
+./testdriver.py initial_load
+./etl.py -c postgres -i 00000000000000000000000000000000 -t \
+    -d ou=user,ou=ph15,o=BMUKK initial_load
+./etl.py -c postgres -i 00000000000000000000000000000000 -t \
+    -d ou=user,ou=ph08,o=BMUKK initial_load
+./ldaptest.py --base-dn2 o=BMUKK -2 iter | diff testdata/ldapII.txt -
+./testdriver.py -A 4731 -A 4732 deluids
+./etl.py -c postgres -i 00000000000000000000000000000000 -t \
+    -d ou=user,ou=ph08,o=BMUKK initial_load
+./ldaptest.py --base-dn2 o=BMUKK -2 iter | \
+    diff testdata/ldap00.txt -
+./etl.py -c postgres -i 00000000000000000000000000000000 -t \
+    -d ou=user,ou=ph08,o=BMUKK -d ou=user,ou=ph15,o=BMUKK etl &
+for test in 01 02 03 04 05 06 07 08 ; do
+    ./testdriver.py -A $test update
+    ./testdriver.py wait_for_sync
+    ./ldaptest.py -2 iter | diff testdata/ldap$test.txt -
+done
+./ldaptest.py --base-dn2 ou=user,ou=ph15,o=BMUKK -2 iter | \
+    diff testdata/ldapI15.txt -

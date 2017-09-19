@@ -71,11 +71,19 @@ class LDAP_Access (object) :
                 time.sleep (5)
     # end def bind_ldap
 
-    def get_by_dn (self, dn, base_dn = None) :
+    def get_by_cn (self, cn, base_dn = None) :
+        """ Get single item by cn for our basedn or the given dn
+        """
+        base_dn = base_dn or self.dn
+        if not cn.startswith ('cn=') :
+            cn = "cn=" + cn
+        dn = ','.join ((cn, base_dn))
+        return self.get_by_dn (dn)
+    # end get_by_cn
+
+    def get_by_dn (self, dn) :
         """ Get entry by dn
         """
-        if base_dn is None :
-            base_dn = self.dn
         r = self.ldcon.search \
             ( dn, '(objectClass=*)'
             , search_scope = BASE
@@ -87,7 +95,10 @@ class LDAP_Access (object) :
             return self.ldcon.response [0]
     # end def get_by_dn
 
-    def get_entry (self, pk_uniqueid, dn = None) :
+    def get_entries (self, pk_uniqueid, dn = None) :
+        """ Get all entries with the same pk_uniqueid.
+            Yes: despite the name these are not unique, unfortunately
+        """
         dn = dn or self.dn
         r = self.ldcon.search \
             ( dn, '(phonlineUniqueId=%s)' % pk_uniqueid
@@ -96,12 +107,14 @@ class LDAP_Access (object) :
             )
         if r :
             if len (self.ldcon.response) != 1 :
-                self.log.error \
-                    ( "Got more than one record with pk_uniqueid %s"
-                    % pk_uniqueid
+                self.log.warn \
+                    ( "Got more than one record with pk_uniqueid %s in dn %s"
+                    % (pk_uniqueid, dn)
                     )
-            return self.ldcon.response [0]
-    # end def get_entry
+            # return a copy
+            return self.ldcon.response [:]
+        return []
+    # end def get_entries
 
     def set_dn (self, dn) :
         self.dn = dn
@@ -395,20 +408,21 @@ class ODBC_Connector (object) :
 
     def delete_in_ldap (self, pk_uniqueid) :
         uid = self.to_ldap (pk_uniqueid, 'pk_uniqueid')
-        ldrec = self.ldap.get_entry (uid)
-        if not ldrec :
-            return
-        dn = ldrec ['dn']
-        r = self.ldap.delete (dn)
-        if not r :
-            msg = \
-                ( "Error on LDAP delete: "
-                  "%(description)s: %(message)s"
-                  " (code: %(result)s)"
-                % self.ldap.result
-                )
-            self.log.error (msg)
-            return msg
+        m   = []
+        for ldrec in self.ldap.get_entries (uid) :
+            dn = ldrec ['dn']
+            r = self.ldap.delete (dn)
+            if not r :
+                msg = \
+                    ( "Error on LDAP delete: "
+                      "%(description)s: %(message)s"
+                      " (code: %(result)s)"
+                    % self.ldap.result
+                    )
+                self.log.error (msg)
+                m.append (msg)
+        if m :
+            return '\n'.join (m)
     # end def delete_in_ldap
 
     def etl (self) :
@@ -445,13 +459,13 @@ class ODBC_Connector (object) :
         for row in rows :
             rw = Namespace ((k, row [i]) for i, k in enumerate (fields))
             self.verbose \
-                ( "Eventlog id: %s type: %s status: %s"
-                % (rw.record_id, rw.event_type, rw.status)
+                ( "Eventlog id: %s type: %s status: %s in %s"
+                % (rw.record_id, rw.event_type, rw.status, self.db)
                 )
             if self.db in self.read_only and rw.event_time > max_evdate :
                 max_evdate = rw.event_time
             if rw.event_type not in self.event_types :
-                msg = 'Invalid event_type: %s' % rw.event_type
+                msg = 'Invalid event_type in %s: %s' % (self.db, rw.event_type)
                 updates [rw.record_id] = dict \
                     ( error_message = msg
                     , status        = 'F'
@@ -460,7 +474,7 @@ class ODBC_Connector (object) :
                 continue
             event_type = self.event_types [rw.event_type]
             if not rw.table_key.startswith ('pk_uniqueid=') :
-                msg = 'Invalid table_key, expect pk_uniqueid='
+                msg = 'Invalid table_key in %s, expect pk_uniqueid=' % self.db
                 updates [rw.record_id] = dict \
                     ( error_message = msg
                     , status        = 'F'
@@ -468,7 +482,8 @@ class ODBC_Connector (object) :
                 self.error (msg)
                 continue
             if rw.table_name.lower () != 'benutzer_alle_dirxml_v' :
-                msg = 'Invalid table_name, expect benutzer_alle_dirxml_v'
+                msg  = 'Invalid table_name in %s, expect benutzer_alle_dirxml_v'
+                msg %= self.db
                 updates [rw.record_id] = dict \
                     ( error_message = msg
                     , status        = 'F'
@@ -479,7 +494,8 @@ class ODBC_Connector (object) :
             try :
                 uid = int (uid)
             except ValueError :
-                msg = 'Invalid table_key, expect numeric id'
+                msg  = 'Invalid table_key: %s in %s, expect numeric id'
+                msg %= (uid, self.db)
                 updates [rw.record_id] = dict \
                     ( error_message = msg
                     , status        = 'F'
@@ -492,7 +508,7 @@ class ODBC_Connector (object) :
             self.cursor.execute (sql, uid)
             usr = self.cursor.fetchall ()
             if len (usr) > 1 :
-                msg = "Duplicate pk_uniqueid: %s" % uid
+                msg = "Duplicate pk_uniqueid: %s in %s" % (uid, self.db)
                 updates [rw.record_id] = dict \
                     ( error_message = msg
                     , status        = 'W'
@@ -500,14 +516,19 @@ class ODBC_Connector (object) :
                 self.log.warn (msg)
             if len (usr) :
                 if event_type == 'delete' :
-                    msg = 'Record %s existing in DB' % uid
+                    msg = 'Record %s existing in DB %s' % (uid, self.db)
                     updates [rw.record_id] = dict \
                         ( error_message = msg
                         , status        = 'W'
                         )
                     self.log.warn (msg)
                 is_new = event_type == 'insert'
-                msg = self.sync_to_ldap (usr [0], is_new = is_new)
+                msg = []
+                for usr_row in usr :
+                    m = self.sync_to_ldap (usr_row, is_new = is_new)
+                    if m :
+                        msg.append (m)
+                msg = '\n'.join (msg)
             else :
                 if event_type != 'delete' :
                     msg = 'Record %s not existing in DB' % uid
@@ -588,7 +609,7 @@ class ODBC_Connector (object) :
                 bdn = ','.join ((dn, bdn))
             else :
                 bdn = dn
-            entry = self.ldap.get_by_dn (bdn, base_dn = top)
+            entry = self.ldap.get_by_dn (bdn)
             k, v  = dn.split ('=', 1)
             if entry :
                 assert entry ['attributes'][k] in (v, [v])
@@ -684,21 +705,51 @@ class ODBC_Connector (object) :
         etl_ts = timestamp.as_generalized_time ()
         tbl = self.table
         rw  = Namespace ((k, row [i]) for i, k in enumerate (self.fields [tbl]))
-        if not rw.pk_uniqueid :
-            # FIXME: Do we want to log user data here??
-            self.log.error ("Got User without pk_uniqueid")
+        if not rw.get ('benutzername') :
+            self.log.error \
+                ( "Got User without benutzername, pk_uniqueid=%s"
+                % rw.get ('pk_uniqueid')
+                )
             return
-        # Find pk_uniqueid in LDAP phonlineUniqueId
+        if not rw.get ('pk_uniqueid') :
+            self.log.error \
+                ( "Got User without pk_uniqueid, benutzername=%s"
+                % rw.get ('benutzername')
+                )
+            return
         uid   = self.to_ldap (rw.pk_uniqueid, 'pk_uniqueid')
-        ldrec = self.ldap.get_entry (uid)
+        # Find cn in LDAP phonlineUniqueId
+        ldrec = self.ldap.get_by_cn (rw.benutzername)
+        if not ldrec :
+            # Try matching by pk_uniqueid
+            ldr = self.ldap.get_entries (uid)
+            if ldr and len (ldr) > 1 :
+                msg = \
+                    ( "Non-matching cn: %s and more than one record"
+                      " with same pk_uniqueid: %s, giving up"
+                    % (rw.benutzername, uid)
+                    )
+                self.log.error (msg)
+                return msg
+            elif ldr and len (ldr) == 1 :
+                ldrec = ldr [0]
         if ldrec :
             if is_new :
                 # Log a warning but continue like a normal sync
                 # During initial_load issue warning only if verbose
-                msg = 'Found pk_uniqueid "%s" when sync says it should be new' \
-                    % uid
+                msg = 'Found dn "%s" when sync says it should be new' \
+                    % ldrec ['dn']
                 if self.args.verbose or self.args.action != 'initial_load' :
                     self.log.warn (msg)
+                self.warning_message = msg
+            nuid = ldrec ['attributes'].get ('phonlineUniqueId')
+            if nuid != uid :
+                msg = \
+                    ( 'Found dn: %s with different phonlineUniqueId: '
+                      'Got %s, expected %s'
+                    % (ldrec ['dn'], nuid, uid)
+                    )
+                self.log.warn (msg)
                 self.warning_message = msg
             # Ensure we use the same IV for comparison
             pw = ldrec ['attributes'].get ('idnDistributionPassword', '')
@@ -722,7 +773,6 @@ class ODBC_Connector (object) :
                         self.crypto_iv = self.args.crypto_iv
                         v = self.to_ldap (rw [k], k)
                     ld_update [lk] = v
-            assert 'phonlineUniqueId' not in ld_update
             assert 'phonlineUniqueId' not in ld_delete
             if not ld_delete and not ld_update :
                 return
@@ -746,7 +796,8 @@ class ODBC_Connector (object) :
                 self.verbose ("Change dn: %s->%s" % (dn, ndn))
                 dn = ndn
             if 'idnDistributionPassword' in ld_update :
-                self.update_password_ph15 (uid, rw ['passwort'])
+                cn = dn.split (',')[0]
+                self.update_password_ph15 (cn, uid, rw ['passwort'])
                 self.verbose ("Change password for dn: %s" % dn)
                 self.ldap.extend.standard.modify_password \
                     (dn, new_password = rw ['passwort'].encode ('utf-8'))
@@ -792,7 +843,7 @@ class ODBC_Connector (object) :
             ld_update ['etlTimestamp'] = etl_ts
             dn = ('cn=%s,' % ld_update ['cn']) + self.dn
             r  = self.ldap.add (dn, attributes = ld_update)
-            self.verbose ("Added dn: %s" % dn)
+            self.verbose ("Adding dn: %s" % dn)
             if not r :
                 msg = \
                     ( "Error on LDAP add: %(description)s: %(message)s"
@@ -807,7 +858,7 @@ class ODBC_Connector (object) :
             self.create_record_ph15 (uid, rw, ld_update)
     # end def sync_to_ldap
 
-    def update_password_ph15 (self, uid, password) :
+    def update_password_ph15 (self, cn, uid, password) :
         """ Write password through to ph15 if password changes on
             another instance: Sync of the database may take too long so
             we optimize this for password changes. The password will
@@ -819,12 +870,12 @@ class ODBC_Connector (object) :
         # If we're working on ph15 now or no ph15: nothing to do
         if not self.has_ph15 or 'ph15' in self.dn :
             return
-        ldrec = self.ldap.get_entry (uid, dn = self.dn15)
+        ldrec = self.ldap.get_by_cn (cn, self.dn15)
         # If record doesn't exist in ph15 we do nothing
         if not ldrec :
-            self.log.warn ("Uid %s not in ph15" % uid)
+            self.log.warn ("CN %s not in ph15" % cn)
             return
-        dn    = ldrec ['dn']
+        dn = ldrec ['dn']
         self.ldap.extend.standard.modify_password \
             (dn, new_password = password.encode ('utf-8'))
         self.crypto_iv = self.args.crypto_iv
@@ -843,19 +894,24 @@ class ODBC_Connector (object) :
     # end def update_password_ph15
 
     def create_record_ph15 (self, uid, rw, ld_update) :
+        # For now disabled: The uid is different in both instances so
+        # there is no way to write this through.
+        return
         # For initial load we don't write to other instances:
         if self.args.action != 'etl' :
             return
         # If we're working on ph15 now or no ph15: nothing to do
         if not self.has_ph15 or 'ph15' in self.dn :
             return
+        # FIXME: If we ever enable this again, this should use
+        # get_entries and be aware that there may be more than one
         ldrec = self.ldap.get_entry (uid, dn = self.dn15)
         if ldrec :
             self.log.warn ("Uid %s already in ph15" % uid)
             return
         dn = ('cn=%s,' % ld_update ['cn']) + self.dn15
         r  = self.ldap.add (dn, attributes = ld_update)
-        self.verbose ("Added dn: %s" % dn)
+        self.verbose ("Adding dn: %s" % dn)
         if not r :
             msg = \
                 ( "Error on LDAP add: %(description)s: %(message)s"
