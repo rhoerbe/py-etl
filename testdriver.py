@@ -106,14 +106,21 @@ class ODBC_Connector (object) :
 
     def cmd_wait_for_sync (self) :
         """ Wait for ETL to finish sync. After a finished sync we will
-            find no eventlog records with status = 'N'
+            find no eventlog records with status = 'N'. We wait for the
+            maximum timeout given.
         """
         l = 1
-        while l :
+        slept = 0
+        while l and slept < self.args.timeout :
             sql = "select status from eventlog_ph where status = 'N'"
             self.cursor.execute (sql)
-            l   = len (self.cursor.fetchall ())
-            time.sleep (1)
+            l = len (self.cursor.fetchall ())
+            if l :
+                time.sleep (1)
+                slept += 1
+        if l :
+            print ("Timeout in wait_for_sync")
+            return 1
     # end def cmd_wait_for_sync
 
     def create_tables (self) :
@@ -273,11 +280,19 @@ def main () :
         , help    = 'Database to connect to'
         , default = 'postgres'
         )
+    cmd.add_argument \
+        ( '-t', '--timeout'
+        , help    = 'Timeout for waiting'
+        , default = 5
+        , type    = int
+        )
     args = cmd.parse_args ()
     odbc = ODBC_Connector (args)
     fun  = getattr (odbc, 'cmd_' + args.command)
-    fun (* args.argument)
+    return fun (* args.argument)
 # end def main
 
 if __name__ == '__main__' :
-    main ()
+    r = main ()
+    if r :
+        sys.exit (r)
