@@ -8,7 +8,7 @@ import time
 
 from argparse         import ArgumentParser
 from ldap3            import Server, Connection, SCHEMA, BASE, LEVEL
-from ldap3            import ALL_ATTRIBUTES, DEREF_NEVER
+from ldap3            import ALL_ATTRIBUTES, DEREF_NEVER, SUBTREE
 from ldap3            import MODIFY_REPLACE, MODIFY_DELETE, MODIFY_ADD
 from datetime         import datetime
 from ldaptimestamp    import LdapTimeStamp
@@ -115,6 +115,17 @@ class LDAP_Access (object) :
             return self.ldcon.response [:]
         return []
     # end def get_entries
+
+    def search_cn_all (self, cn) :
+        r = self.ldcon.search \
+            ( "o=BMUKK", '(cn=%s)' % cn
+            , search_scope = SUBTREE
+            , attributes   = ALL_ATTRIBUTES
+            )
+        if r :
+            return self.ldcon.response
+        return []
+    # end def search_cn_all
 
     def set_dn (self, dn) :
         self.dn = dn
@@ -306,6 +317,11 @@ class ODBC_Connector (object) :
         , 6.0   : 'update'
         }
 
+    acc_status = \
+        ( 'phonlineAccStBediensteter'
+        , 'phonlineAccStStudent'
+        , 'phonlineAccStWeiterbildung'
+        )
 
     def __init__ (self, args) :
         self.args      = args
@@ -409,15 +425,58 @@ class ODBC_Connector (object) :
     def delete_in_ldap (self, pk_uniqueid) :
         uid = self.to_ldap (pk_uniqueid, 'pk_uniqueid')
         m   = []
-        for ldrec in self.ldap.get_entries (uid) :
+        entries = self.ldap.get_entries (uid) [:]
+        for ldrec in entries :
             dn = ldrec ['dn']
             r = self.ldap.delete (dn)
+            self.verbose ("Deleting record: %s" % dn)
             if not r :
                 msg = \
                     ( "Error on LDAP delete: "
                       "%(description)s: %(message)s"
                       " (code: %(result)s)"
                     % self.ldap.result
+                    )
+                self.log.error (msg)
+                m.append (msg)
+        # We check if any of the entries doesn't have an account anymore
+        # If so we must delete it in ph15.
+        for ldrec in entries :
+            cn = ldrec ['attributes']['cn']
+            if isinstance (cn, type ([])) :
+                assert len (cn) == 1
+                cn = cn [0]
+            matches = self.ldap.search_cn_all (cn)
+            # If we get no result or more than one we have nothing to do
+            nm = len (matches)
+            if not matches or nm > 2 or not nm :
+                self.verbose ("Not deleting cn=%s in ph15: found %s" % (cn, nm))
+                continue
+            m = matches [0]
+            if 'ph15' not in m ['dn'] :
+                self.log.error \
+                    ( "During deletion: Found CN=%s in DN=%s but not in ph15"
+                    % (cn, m ['dn'])
+                    )
+                continue
+            acc_status_found = False
+            for a in self.acc_status :
+                if m ['attributes'].get (a) :
+                    acc_status_found = True
+                    break
+            dn = 'cn=' + cn + ',' + self.dn15
+            assert (dn == m ['dn'])
+            if acc_status_found :
+                self.verbose ("Not deleting %s: has account" % dn)
+                continue
+            r = self.ldap.delete (dn)
+            if not r :
+                msg = \
+                    ( "Error on LDAP delete ph15: "
+                      "%(description)s: %(message)s"
+                      " (code: %(result)s)"
+                    % self.ldap.result
+                    + "DN=%s" % dn
                     )
                 self.log.error (msg)
                 m.append (msg)
