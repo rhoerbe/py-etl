@@ -41,7 +41,7 @@ class ApplicationError (Exception) :
 
 class LDAP_Access (object) :
 
-    def __init__ (self, args) :
+    def __init__ (self, args, parent) :
         self.args  = args
         # FIXME: Poor-mans logger for now
         self.log = Namespace ()
@@ -50,8 +50,9 @@ class LDAP_Access (object) :
         self.log ['warn']  = log_warn
         self.log ['info']  = log_info
 
-        self.srv   = Server (self.args.uri, get_info = SCHEMA)
-        self.ldcon = Connection \
+        self.parent = parent
+        self.srv    = Server (self.args.uri, get_info = SCHEMA)
+        self.ldcon  = Connection \
             (self.srv, self.args.bind_dn, self.args.password)
         self.bind_ldap ()
     # end def __init__
@@ -127,10 +128,6 @@ class LDAP_Access (object) :
         return []
     # end def search_cn_all
 
-    def set_dn (self, dn) :
-        self.dn = dn
-    # end def set_dn
-
     def __getattr__ (self, name) :
         """ Delegate to our ldcon, caching variant """
         if name.startswith ('_') :
@@ -139,6 +136,11 @@ class LDAP_Access (object) :
         # Don't cache!
         return r
     # end def __getattr__
+
+    @property
+    def dn (self) :
+        return self.parent.dn
+    # end def dn
 
 # end class LDAP_Access
 
@@ -331,7 +333,7 @@ class ODBC_Connector (object) :
         self.log ['error'] = log_error
         self.log ['warn']  = log_warn
         self.log ['info']  = log_info
-        self.ldap      = LDAP_Access (self.args)
+        self.ldap      = LDAP_Access (self.args, self)
         self.verbose ("Bound to ldap")
         self.table     = 'benutzer_alle_dirxml_v'
         self.crypto_iv = None
@@ -344,15 +346,26 @@ class ODBC_Connector (object) :
         self.data_conversion = dict (self.data_conversion)
         # and add a bound method
         self.data_conversion ['passwort'] = self.from_password
-        self.has_ph15 = False
         self.read_only = \
             dict ((r, datetime (2017, 1, 1)) for r in self.args.read_only)
+        self.ph15dn = None
+        self.ph15db = None
         if self.args.action == 'etl' :
-            for dn in self.args.base_dn :
+            for n, dn in enumerate (self.args.base_dn) :
                 if 'ph15' in dn :
-                    self.has_ph15 = True
+                    self.ph15dn = dn
+                    if len (self.args.databases) > n :
+                        self.ph15db = self.args.databases [n]
+                    elif (   len (self.args.databases) == 1
+                         and self.args.databases [0] == 'postgres'
+                         ) :
+                        self.ph15db = self.args.databases [0]
                     break
         self.do_sleep = True
+        # We do not get events when cn changes for ph15, so we put the
+        # into this dict and use it to sync ph15 with it (only the event
+        # is used, not the actual change)
+        self.ph15_change_dn = {}
     # end def __init__
 
     def action (self) :
@@ -364,15 +377,22 @@ class ODBC_Connector (object) :
                 for dn, db in zip (self.args.base_dn, self.args.databases) :
                     self.db = db
                     self.dn = dn
-                    self.ldap.set_dn (dn)
                     try :
-                        self.verbose ("DB-Connect: %s" % db)
+                        self.verbose ("DB-Connect: %s %s" % (db, dn))
                         self.cnx    = pyodbc.connect (DSN = db)
                         self.cursor = self.cnx.cursor ()
                         self.verbose ("connected.")
                     except Exception as cause :
                         raise (ApplicationError (cause))
                     self.etl ()
+                    self.cursor.close ()
+                    self.cnx.close ()
+                if self.ph15db :
+                    self.db     = self.ph15db
+                    self.dn     = self.ph15dn
+                    self.cnx    = pyodbc.connect (DSN = self.db)
+                    self.cursor = self.cnx.cursor ()
+                    self.update_ph15 ()
                     self.cursor.close ()
                     self.cnx.close ()
                 if self.do_sleep :
@@ -643,6 +663,50 @@ class ODBC_Connector (object) :
             self.cursor.commit ()
     # end def etl
 
+    def update_ph15 (self) :
+        """ Special case for ph15: We process the triggers of changed CNs
+            for other databases
+        """
+        if 'ph15' in self.dn and self.ph15_change_dn :
+            sql = 'select %s from %s where benutzername in (?, ?)'
+            sql = sql % (','.join (self.fields [self.table]), self.table)
+            for oldcn in self.ph15_change_dn :
+                newcn = self.ph15_change_dn [oldcn]
+                self.cursor.execute (sql, oldcn, newcn)
+                rows = self.cursor.fetchall ()
+                if len (rows) > 1 :
+                    self.log.warn \
+                        ( 'Duplicate CN on cn change ph15: "%s/%s": %s'
+                        % (oldcn, newcn, len (rows))
+                        )
+                for row in rows :
+                    self.sync_to_ldap (row, is_new = False)
+        self.ph15_change_dn = {}
+    # end def update_ph15
+#                    if len (rows) :
+#                        if cn == oldcn :
+#                            self.log.warn \
+#                                ('CN change ph15: "%s" still in DB' % cn)
+#                        if len (rows > 1) :
+#                            self.log.warn ('Duplicate CN: "%s"' % cn)
+#                        for row in rows :
+#                            self.sync_to_ldap (row, is_new = False)
+#                    else :
+#                        if cn == newcn :
+#                            self.log.warn \
+#                                ('CN change ph15: "%s" not in DB' % cn)
+#                        dn = 'cn=%s,' % cn + self.dn
+#                        self.verbose ("Deleting record: %s" % dn)
+#                        r = self.ldap.delete (dn)
+#                        if not r :
+#                            msg = \
+#                                ( "Error on LDAP delete: "
+#                                  "%(description)s: %(message)s"
+#                                  " (code: %(result)s)"
+#                                % self.ldap.result + "DN=%s" % dn
+#                                )
+#                            self.log.error (msg)
+
     def generate_initial_tree (self) :
         """ Check if initial tree exists, generate if non-existing
         """
@@ -712,7 +776,6 @@ class ODBC_Connector (object) :
         for bdn, db in zip (self.args.base_dn, self.args.databases) :
             self.db = db
             self.dn = bdn
-            self.ldap.set_dn (self.dn)
             self.log.debug ("%s: %s" % (db, self.dn))
             # Get all unique ids currently in ldap under our tree
             self.uidmap = {}
@@ -839,6 +902,11 @@ class ODBC_Connector (object) :
             # dn modified, the cn is the rdn!
             dn = ldrec ['dn']
             if 'cn' in ld_update :
+                oldcn = ldrec ['attributes']['cn']
+                if isinstance (oldcn, type ([])) :
+                    assert len (oldcn) == 1
+                    oldcn = oldcn [0]
+                self.ph15_change_dn [oldcn] = ld_update ['cn']
                 cn = 'cn=' + ld_update ['cn']
                 r  = self.ldap.modify_dn (ldrec ['dn'], cn)
                 if not r :
@@ -927,7 +995,7 @@ class ODBC_Connector (object) :
         if self.args.action != 'etl' :
             return
         # If we're working on ph15 now or no ph15: nothing to do
-        if not self.has_ph15 or 'ph15' in self.dn :
+        if not self.ph15dn or 'ph15' in self.dn :
             return
         ldrec = self.ldap.get_by_cn (cn, self.dn15)
         # If record doesn't exist in ph15 we do nothing
@@ -960,7 +1028,7 @@ class ODBC_Connector (object) :
         if self.args.action != 'etl' :
             return
         # If we're working on ph15 now or no ph15: nothing to do
-        if not self.has_ph15 or 'ph15' in self.dn :
+        if not self.ph15dn or 'ph15' in self.dn :
             return
         # FIXME: If we ever enable this again, this should use
         # get_entries and be aware that there may be more than one
