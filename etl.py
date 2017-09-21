@@ -392,7 +392,7 @@ class ODBC_Connector (object) :
                     self.dn     = self.ph15dn
                     self.cnx    = pyodbc.connect (DSN = self.db)
                     self.cursor = self.cnx.cursor ()
-                    self.update_ph15 ()
+                    self.update_ph15_cn ()
                     self.cursor.close ()
                     self.cnx.close ()
                 if self.do_sleep :
@@ -461,45 +461,48 @@ class ODBC_Connector (object) :
                 m.append (msg)
         # We check if any of the entries doesn't have an account anymore
         # If so we must delete it in ph15.
-        for ldrec in entries :
-            cn = ldrec ['attributes']['cn']
-            if isinstance (cn, type ([])) :
-                assert len (cn) == 1
-                cn = cn [0]
-            matches = self.ldap.search_cn_all (cn)
-            # If we get no result or more than one we have nothing to do
-            nm = len (matches)
-            if not matches or nm > 2 or not nm :
-                self.verbose ("Not deleting cn=%s in ph15: found %s" % (cn, nm))
-                continue
-            m = matches [0]
-            if 'ph15' not in m ['dn'] :
-                self.log.error \
-                    ( "During deletion: Found CN=%s in DN=%s but not in ph15"
-                    % (cn, m ['dn'])
-                    )
-                continue
-            acc_status_found = False
-            for a in self.acc_status :
-                if m ['attributes'].get (a) :
-                    acc_status_found = True
-                    break
-            dn = 'cn=' + cn + ',' + self.dn15
-            assert (dn == m ['dn'])
-            if acc_status_found :
-                self.verbose ("Not deleting %s: has account" % dn)
-                continue
-            r = self.ldap.delete (dn)
-            if not r :
-                msg = \
-                    ( "Error on LDAP delete ph15: "
-                      "%(description)s: %(message)s"
-                      " (code: %(result)s)"
-                    % self.ldap.result
-                    + "DN=%s" % dn
-                    )
-                self.log.error (msg)
-                m.append (msg)
+        if 'ph15' not in self.dn :
+            for ldrec in entries :
+                cn = ldrec ['attributes']['cn']
+                if isinstance (cn, type ([])) :
+                    assert len (cn) == 1
+                    cn = cn [0]
+                matches = self.ldap.search_cn_all (cn)
+                # If we get no result or more than one we have nothing to do
+                nm = len (matches)
+                if not matches or nm > 2 or not nm :
+                    self.verbose \
+                        ("Not deleting cn=%s in ph15: found %s" % (cn, nm))
+                    continue
+                m = matches [0]
+                if 'ph15' not in m ['dn'] :
+                    self.log.error \
+                        ( 'During deletion: Found CN=%s in DN=%s '
+                          'but not in ph15'
+                        % (cn, m ['dn'])
+                        )
+                    continue
+                acc_status_found = False
+                for a in self.acc_status :
+                    if m ['attributes'].get (a) :
+                        acc_status_found = True
+                        break
+                dn = 'cn=' + cn + ',' + self.dn15
+                assert (dn == m ['dn'])
+                if acc_status_found :
+                    self.verbose ("Not deleting %s: has account" % dn)
+                    continue
+                r = self.ldap.delete (dn)
+                if not r :
+                    msg = \
+                        ( "Error on LDAP delete ph15: "
+                          "%(description)s: %(message)s"
+                          " (code: %(result)s)"
+                        % self.ldap.result
+                        + "DN=%s" % dn
+                        )
+                    self.log.error (msg)
+                    m.append (msg)
         if m :
             return '\n'.join (m)
     # end def delete_in_ldap
@@ -663,7 +666,7 @@ class ODBC_Connector (object) :
             self.cursor.commit ()
     # end def etl
 
-    def update_ph15 (self) :
+    def update_ph15_cn (self) :
         """ Special case for ph15: We process the triggers of changed CNs
             for other databases
         """
@@ -682,7 +685,7 @@ class ODBC_Connector (object) :
                 for row in rows :
                     self.sync_to_ldap (row, is_new = False)
         self.ph15_change_dn = {}
-    # end def update_ph15
+    # end def update_ph15_cn
 #                    if len (rows) :
 #                        if cn == oldcn :
 #                            self.log.warn \
@@ -922,12 +925,18 @@ class ODBC_Connector (object) :
                 ndn = cn + ',' + dn.split (',', 1)[-1]
                 self.verbose ("Change dn: %s->%s" % (dn, ndn))
                 dn = ndn
+            ph15changes = {}
             if 'idnDistributionPassword' in ld_update :
-                cn = dn.split (',')[0]
-                self.update_password_ph15 (cn, uid, rw ['passwort'])
+                ph15changes ['passwort'] = True
                 self.verbose ("Change password for dn: %s" % dn)
                 self.ldap.extend.standard.modify_password \
                     (dn, new_password = rw ['passwort'].encode ('utf-8'))
+            for ph15k in 'vorname', 'nachname', 'emailadresse_st' :
+                if self.odbc_to_ldap_field [ph15k] in ld_update :
+                    ph15changes [ph15k] = True
+            if ph15changes :
+                cn = dn.split (',')[0]
+                self.update_attributes_ph15 (cn, uid, rw, ph15changes)
             if ld_update or ld_delete :
                 changes = {}
                 for k in ld_update :
@@ -985,13 +994,13 @@ class ODBC_Connector (object) :
             self.create_record_ph15 (uid, rw, ld_update)
     # end def sync_to_ldap
 
-    def update_password_ph15 (self, cn, uid, password) :
-        """ Write password through to ph15 if password changes on
+    def update_attributes_ph15 (self, cn, uid, rw, chkeys) :
+        """ Write attributes through to ph15 if attribute changes on
             another instance: Sync of the database may take too long so
-            we optimize this for password changes. The password will
-            probably later be synced to ph15 explicitly again.
+            we optimize this for some attribute changes. Note that for
+            many changes in ph15 we will never get an explicit event.
         """
-        # For initial load we don't write passwords to other instances:
+        # For initial load we don't write to other instances:
         if self.args.action != 'etl' :
             return
         # If we're working on ph15 now or no ph15: nothing to do
@@ -1003,12 +1012,31 @@ class ODBC_Connector (object) :
             self.log.warn ("CN %s not in ph15" % cn)
             return
         dn = ldrec ['dn']
-        self.ldap.extend.standard.modify_password \
-            (dn, new_password = password.encode ('utf-8'))
-        self.crypto_iv = self.args.crypto_iv
-        v = self.to_ldap (password, 'passwort')
-        change = dict (idnDistributionPassword = (MODIFY_REPLACE, v))
-        r = self.ldap.modify (dn, change)
+        changes = {}
+        for k in chkeys :
+            if k == 'passwort' :
+                password = rw [k]
+                self.ldap.extend.standard.modify_password \
+                    (dn, new_password = password.encode ('utf-8'))
+                self.crypto_iv = self.args.crypto_iv
+                v = self.to_ldap (password, 'passwort')
+                changes ['idnDistributionPassword'] = (MODIFY_REPLACE, v)
+            else :
+                changes 
+                v  = self.to_ldap (rw [k], k)
+                # Don't delete attribute in ph15
+                if v is None :
+                    continue
+                lk = self.odbc_to_ldap_field [k]
+                lv = ldrec ['attributes'].get (lk, None)
+                if v == lv or [v] == lv :
+                    continue
+                self.verbose ("Change %s for dn: %s" % (lk, dn))
+                if isinstance (v, type ([])) :
+                    changes [lk] = (MODIFY_REPLACE, v)
+                else :
+                    changes [lk] = (MODIFY_REPLACE, [v])
+        r = self.ldap.modify (dn, changes)
         if not r :
             msg = \
                 ( "Error on LDAP modify (password ph15): "
@@ -1018,7 +1046,7 @@ class ODBC_Connector (object) :
                 )
             self.log.error (msg + str (change))
         self.verbose ("Changed password for %s" % dn)
-    # end def update_password_ph15
+    # end def update_attributes_ph15
 
     def create_record_ph15 (self, uid, rw, ld_update) :
         # For now disabled: The uid is different in both instances so
