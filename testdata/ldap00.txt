@@ -1,4 +1,4 @@
-o=BMUKK o=['BMUKK'] objectClass=['organization'] 
+o=BMUKK o=['BMUKK'] objectClass=['organization', 'patchlevel'] patchlevel=[2] 
 ou=ph01,o=BMUKK objectClass=['organizationalUnit'] ou=['ph01'] 
 ou=user,ou=ph01,o=BMUKK objectClass=['organizationalUnit'] ou=['user'] 
 ou=ph02,o=BMUKK objectClass=['organizationalUnit'] ou=['ph02'] 
