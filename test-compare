@@ -8,9 +8,12 @@
 /opt/bin/ldaptest.py --base-dn2 o=BMUKK -2 iter | \
     diff /opt/bin/testdata/ldap00.txt -
 for test in 01 02 03 04 05 06 07 08 ; do
+    echo $test
     /opt/bin/testdriver.py -A $test update
     /opt/bin/testdriver.py wait_for_sync
-    /opt/bin/ldaptest.py -2 iter | diff /opt/bin/testdata/ldap$test.txt -
-done
+    ( /opt/bin/ldaptest.py -2 iter | diff /opt/bin/testdata/ldap$test.txt - ) \
+        || break
+    /opt/bin/set_etd_done.py
+done || exit 1
 opt/bin/ldaptest.py --base-dn2 ou=user,ou=ph15,o=BMUKK -2 iter | \
     diff /opt/bin/testdata/ldapI15.txt -

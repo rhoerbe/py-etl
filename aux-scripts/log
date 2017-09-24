@@ -182,3 +182,11 @@ ldapsearch -b 'o=BMUKK-QS' -H ldaps://172.18.81.8:636 -W -D \
     'cn=rudolf.mader,ou=auth,o=BMUKK-QS' "(phonlineUniqueId=115278)" |less
 ldapsearch -b 'o=BMUKK-QS' -H ldaps://172.18.81.8:636 -W -D \
     'cn=rudolf.mader,ou=auth,o=BMUKK-QS' "(cn=AAAAA_nopw)"
+
+ldapsearch -b 'o=BMUKK' -H $LDAP_URI -w changeit -D \
+    'cn=admin,o=BMUKK' '(&(cn=sqtqlj.pmaq.4)(!(idnDeleted=*)))'
+
+isql postgres 
+select event_type, status, table_key, error_message from eventlog_ph where status='F'
+
+

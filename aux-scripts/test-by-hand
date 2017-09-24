@@ -12,9 +12,11 @@
 ./etl.py -c postgres -i 00000000000000000000000000000000 -t \
     -d ou=user,ou=ph08,o=BMUKK -d ou=user,ou=ph15,o=BMUKK etl &
 for test in 01 02 03 04 05 06 07 08 ; do
+    echo $test
     ./testdriver.py -A $test update
     ./testdriver.py wait_for_sync
-    ./ldaptest.py -2 iter | diff testdata/ldap$test.txt -
-done
+    ( ./ldaptest.py -2 iter | diff testdata/ldap$test.txt - ) || break
+    ./set_etd_done.py
+done || exit 1
 ./ldaptest.py --base-dn2 ou=user,ou=ph15,o=BMUKK -2 iter | \
     diff testdata/ldapI15.txt -

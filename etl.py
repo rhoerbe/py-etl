@@ -119,7 +119,7 @@ class LDAP_Access (object) :
 
     def search_cn_all (self, cn) :
         r = self.ldcon.search \
-            ( "o=BMUKK", '(cn=%s)' % cn
+            ( "o=BMUKK", '(&(cn=%s)(!(idnDeleted=*)))' % cn
             , search_scope = SUBTREE
             , attributes   = ALL_ATTRIBUTES
             )
@@ -325,6 +325,12 @@ class ODBC_Connector (object) :
         , 'phonlineAccStWeiterbildung'
         )
 
+    acc_active = \
+        ( 'phonlineWeiterbildungAktiv'
+        , 'phonlineBediensteterAktiv'
+        , 'phonlineStudentAktiv'
+        )
+
     def __init__ (self, args) :
         self.args      = args
         # FIXME: Poor-mans logger for now
@@ -384,6 +390,8 @@ class ODBC_Connector (object) :
                         self.verbose ("connected.")
                     except Exception as cause :
                         raise (ApplicationError (cause))
+                    if 'ph15' not in self.dn :
+                        self.garbage_collect ()
                     self.etl ()
                     self.cursor.close ()
                     self.cnx.close ()
@@ -443,24 +451,66 @@ class ODBC_Connector (object) :
     # end def db_iter
 
     def delete_in_ldap (self, pk_uniqueid) :
+        """ Note: We do not really delete entries *unless* they are in
+            ph15. We only mark the entry as deleted using the idnDeleted
+            attribute *and* we reset all the phonline*Aktiv attributes.
+            This ensures that the account is marked inactive in the ph.
+            Once the entry is synchronized with the ph (using etd) we
+            delete all the entries marked deleted and marked synced.
+        """
         uid = self.to_ldap (pk_uniqueid, 'pk_uniqueid')
         m   = []
         entries = self.ldap.get_entries (uid) [:]
         for ldrec in entries :
             dn = ldrec ['dn']
-            r = self.ldap.delete (dn)
-            self.verbose ("Deleting record: %s" % dn)
-            if not r :
-                msg = \
-                    ( "Error on LDAP delete: "
-                      "%(description)s: %(message)s"
-                      " (code: %(result)s)"
-                    % self.ldap.result
-                    )
-                self.log.error (msg)
-                m.append (msg)
-        # We check if any of the entries doesn't have an account anymore
-        # If so we must delete it in ph15.
+            if 'ph15' in self.dn :
+                r = self.ldap.delete (dn)
+                self.verbose ("Deleting record: %s" % dn)
+                if not r :
+                    msg = \
+                        ( "Error on LDAP delete: "
+                          "%(description)s: %(message)s"
+                          " (code: %(result)s)"
+                        % self.ldap.result
+                        )
+                    self.log.error (msg)
+                    m.append (msg)
+            else :
+                changes = {}
+                atr = ldrec ['attributes']
+                self.verbose ("Marking as deleted record: %s" % dn)
+                if not atr.get ('idnDeleted') :
+                    changes ['idnDeleted'] = (MODIFY_ADD, ['TRUE'])
+                for a in self.acc_status :
+                    if atr.get (a) == 'OK' :
+                        changes [a] = (MODIFY_REPLACE, ['GESPERRT'])
+                for a in self.acc_active :
+                    if a in atr and atr [a] != 'N' :
+                        changes [a] = (MODIFY_REPLACE, ['N'])
+                if changes :
+                    r = self.ldap.modify (dn, changes)
+                    if not r :
+                        msg = \
+                            ( "Error on LDAP modify: "
+                              "%(description)s: %(message)s"
+                              " (code: %(result)s)"
+                            % self.ldap.result
+                            + "trying to mark deleted: %s" % dn
+                            )
+                        self.log.error (msg)
+                        return msg
+        msg = self.delete_in_ldap_ph15 (entries)
+        if msg :
+            m.append (msg)
+        if m :
+            return '\n'.join (m)
+    # end def delete_in_ldap
+
+    def delete_in_ldap_ph15 (self, entries) :
+        """ We check if any of the entries doesn't have an account anymore
+            If so we must delete it in ph15.
+        """
+        m   = []
         if 'ph15' not in self.dn :
             for ldrec in entries :
                 cn = ldrec ['attributes']['cn']
@@ -474,8 +524,8 @@ class ODBC_Connector (object) :
                     self.verbose \
                         ("Not deleting cn=%s in ph15: found %s" % (cn, nm))
                     continue
-                m = matches [0]
-                if 'ph15' not in m ['dn'] :
+                ldr = matches [0]
+                if 'ph15' not in ldr ['dn'] :
                     self.log.error \
                         ( 'During deletion: Found CN=%s in DN=%s '
                           'but not in ph15'
@@ -484,11 +534,11 @@ class ODBC_Connector (object) :
                     continue
                 acc_status_found = False
                 for a in self.acc_status :
-                    if m ['attributes'].get (a) :
+                    if ldr ['attributes'].get (a) :
                         acc_status_found = True
                         break
                 dn = 'cn=' + cn + ',' + self.dn15
-                assert (dn == m ['dn'])
+                assert (dn == ldr ['dn'])
                 if acc_status_found :
                     self.verbose ("Not deleting %s: has account" % dn)
                     continue
@@ -505,7 +555,7 @@ class ODBC_Connector (object) :
                     m.append (msg)
         if m :
             return '\n'.join (m)
-    # end def delete_in_ldap
+    # end def delete_in_ldap_ph15
 
     def etl (self) :
         tbl    = 'eventlog_ph'
@@ -666,6 +716,33 @@ class ODBC_Connector (object) :
             self.cursor.commit ()
     # end def etl
 
+    def garbage_collect (self) :
+        """ Search for all records in ldap where idnDeleted=True and the
+            idnSyncDiff is 0. These are already synced to the ph and
+            therefore are deleted now.
+        """
+        r = self.ldap.search \
+            ( self.dn, '(&(idnSyncDiff=0)(idnDeleted=*))'
+            , search_scope = SUBTREE
+            , attributes   = ALL_ATTRIBUTES
+            )
+        if not r :
+            return
+        for ldrec in self.ldap.response [:] :
+            dn = ldrec ['dn']
+            self.verbose ("Garbage-collect: %s" % dn)
+            r = self.ldap.delete (dn)
+            if not r :
+                msg = \
+                    ( "Error on LDAP delete: "
+                      "%(description)s: %(message)s"
+                      " (code: %(result)s)"
+                    % self.ldap.result
+                    + 'Garbage collect for %s failed' % dn
+                    )
+                self.log.error (msg)
+    # end def garbage_collect
+
     def update_ph15_cn (self) :
         """ Special case for ph15: We process the triggers of changed CNs
             for other databases
@@ -781,6 +858,8 @@ class ODBC_Connector (object) :
             self.dn = bdn
             self.log.debug ("%s: %s" % (db, self.dn))
             # Get all unique ids currently in ldap under our tree
+            # Note that we store dn and idnDeleted attribute in the
+            # uidmap.
             self.uidmap = {}
             r = self.ldap.search \
                 ( self.dn, '(phonlineUniqueId=*)'
@@ -790,7 +869,8 @@ class ODBC_Connector (object) :
             if r :
                 for entry in self.ldap.response :
                     uid = entry ['attributes']['phonlineUniqueId']
-                    self.uidmap [uid] = entry ['dn']
+                    dlt = entry ['attributes'].get ('idnDeleted')
+                    self.uidmap [uid] = (entry ['dn'], dlt)
                     assert entry ['dn'].endswith (self.dn)
             for n, row in self.db_iter (db) :
                 if (n % 1000) == 0 or self.args.verbose :
@@ -801,17 +881,20 @@ class ODBC_Connector (object) :
                     del self.uidmap [uid]
                 self.sync_to_ldap (row, is_new = True)
             for u in sorted (self.uidmap) :
-                udn = self.uidmap [u]
-                self.log.warn ("Deleting: %s: %s" % (u, udn))
-                r = self.ldap.delete (udn)
-                if not r :
-                    msg = \
-                        ( "Error on LDAP delete: "
-                          "%(description)s: %(message)s"
-                          " (code: %(result)s)"
-                        % self.ldap.result
-                        )
-                    self.log.error (msg)
+                udn, dlt = self.uidmap [u]
+                if dlt :
+                    self.log.warn ("Not deleting: %s: %s" % (u, udn))
+                else :
+                    self.log.warn ("Deleting: %s: %s" % (u, udn))
+                    r = self.ldap.delete (udn)
+                    if not r :
+                        msg = \
+                            ( "Error on LDAP delete: "
+                              "%(description)s: %(message)s"
+                              " (code: %(result)s)"
+                            % self.ldap.result
+                            )
+                        self.log.error (msg)
         self.log.info ("SUCCESS")
         sys.stdout.flush ()
         # Default is to wait forever after initial load
@@ -845,7 +928,17 @@ class ODBC_Connector (object) :
         uid   = self.to_ldap (rw.pk_uniqueid, 'pk_uniqueid')
         # Find cn in LDAP phonlineUniqueId
         ldrec = self.ldap.get_by_cn (rw.benutzername)
-        if not ldrec :
+        if ldrec :
+            atr = ldrec ['attributes']
+            if atr.get ('idnDeleted') and atr.get ('phonlineUniqueId') != uid :
+                msg = \
+                    ( "Found deleted record with same CN %s but different "
+                      "pk_uniqueid: %s"
+                    % (rw.benutzername, uid)
+                    )
+                self.log.error (msg)
+                return msg
+        else :
             # Try matching by pk_uniqueid
             ldr = self.ldap.get_entries (uid)
             if ldr and len (ldr) > 1 :
@@ -882,6 +975,9 @@ class ODBC_Connector (object) :
                 self.crypto_iv = pw [:32]
             ld_update = {}
             ld_delete = {}
+            if ldrec ['attributes'].get ('idnDeleted') :
+                self.log.warn ("Resurrecting: %s" % ldrec ['dn'])
+                ld_delete ['idnDeleted'] = None
             for k in rw :
                 v  = self.to_ldap (rw [k], k)
                 lk = self.odbc_to_ldap_field [k]
