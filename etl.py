@@ -879,7 +879,8 @@ class ODBC_Connector (object) :
                 uid = "%d" % row [idx]
                 if uid in self.uidmap :
                     del self.uidmap [uid]
-                self.sync_to_ldap (row, is_new = True)
+                self.sync_to_ldap \
+                    (row, is_new = True, force = self.args.force_create)
             for u in sorted (self.uidmap) :
                 udn, dlt = self.uidmap [u]
                 if dlt :
@@ -903,7 +904,7 @@ class ODBC_Connector (object) :
                 time.sleep (self.args.sleeptime)
     # end def initial_load
 
-    def sync_to_ldap (self, row, is_new = False) :
+    def sync_to_ldap (self, row, is_new = False, force = False) :
         """ Sync a single record to LDAP. We return an error message if
             something goes wrong (and log the error). The caller might
             want to put the error message into some table in the
@@ -938,7 +939,7 @@ class ODBC_Connector (object) :
                     )
                 self.log.error (msg)
                 return msg
-        else :
+        elif not is_new or not force :
             # Try matching by pk_uniqueid
             ldr = self.ldap.get_entries (uid)
             if ldr and len (ldr) > 1 :
@@ -1234,6 +1235,15 @@ def main () :
                     "environment, will use *all* databases specified"
         , action  = 'append'
         , default = []
+        )
+    cmd.add_argument \
+        ( "-f", "--force-create"
+        , help    = "Force creation of a record if not found by CN. "
+                    "This should be used for initial sync for duplicate "
+                    "pk_uniqueid to be transferred. Note with this flag "
+                    "no CN changes are detected."
+        , action  = 'store_true'
+        , default = False
         )
     cmd.add_argument \
         ( "-i", "--crypto-iv"

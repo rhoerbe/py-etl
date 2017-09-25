@@ -65,7 +65,7 @@ class ODBC_Connector (object) :
             )
         )
     primary_key = dict \
-        ( benutzer_alle_dirxml_v = 'pk_uniqueid'
+        ( benutzer_alle_dirxml_v = 'ident_nr'
         , eventlog_ph            = 'record_id'
         )
 
