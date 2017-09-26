@@ -532,7 +532,7 @@ class ODBC_Connector (object) :
                     self.log.error \
                         ( 'During deletion: Found CN=%s in DN=%s '
                           'but not in ph15'
-                        % (cn, m ['dn'])
+                        % (cn, ldr ['dn'])
                         )
                     continue
                 acc_status_found = False

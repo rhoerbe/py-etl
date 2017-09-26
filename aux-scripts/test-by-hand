@@ -17,9 +17,7 @@
     -d ou=user,ou=ph08,o=BMUKK -d ou=user,ou=ph15,o=BMUKK etl &
 for test in 01 02 03 04 05 06 07 08 ; do
     echo $test
-    if [ $test = 07 ]; then
-        ./set_etd_done.py -U 4715
-    fi
+    ./set_etd_done.py -U 4715
     ./testdriver.py -A $test update
     ./testdriver.py wait_for_sync
     if [ $test = 07 ]; then
