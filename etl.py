@@ -463,7 +463,7 @@ class ODBC_Connector (object) :
         entries = self.ldap.get_entries (uid) [:]
         for ldrec in entries :
             dn = ldrec ['dn']
-            if 'ph15' in self.dn :
+            if 'ph15' in self.dn or self.db in self.args.no_etd :
                 r = self.ldap.delete (dn)
                 self.verbose ("Deleting record: %s" % dn)
                 if not r :
@@ -1289,6 +1289,13 @@ def main () :
     cmd.add_argument \
         ( "-r", "--read-only"
         , help    = "Databases given with this options will not write eventlog"
+        , default = []
+        , action  = 'append'
+        )
+    cmd.add_argument \
+        ( "-e", "--no-etd"
+        , help    = "Databases not synchronized with ETD: "
+                    "Deleted records are immediately deleted"
         , default = []
         , action  = 'append'
         )
