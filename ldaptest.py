@@ -181,6 +181,7 @@ compare_ignore = set \
      , 'nspmDistributionPassword'
      , 'passwordAllowChange'
      , 'passwordRequired'
+     , 'etdTimestamp'
      , 'etlTimestamp'
      , 'idnDistributionPassword'
      , 'userPassword'
@@ -280,7 +281,7 @@ def main () :
         for x in ld.iter () :
             print (x ['dn'], end = ' ')
             for k in sorted (x ['attributes'].keys ()) :
-                if k == 'etlTimestamp' :
+                if k == 'etlTimestamp' or k == 'etdTimestamp' :
                     continue
                 v = x ['attributes'][k]
                 if k == 'userPassword' :

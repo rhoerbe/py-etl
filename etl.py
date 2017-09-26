@@ -488,6 +488,9 @@ class ODBC_Connector (object) :
                     if a in atr and atr [a] != 'N' :
                         changes [a] = (MODIFY_REPLACE, ['N'])
                 if changes :
+                    timestamp = LdapTimeStamp (datetime.now (pytz.utc))
+                    etl_ts = timestamp.as_generalized_time ()
+                    changes ['etlTimestamp'] = (MODIFY_REPLACE, [etl_ts])
                     r = self.ldap.modify (dn, changes)
                     if not r :
                         msg = \

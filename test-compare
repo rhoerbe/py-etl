@@ -9,8 +9,12 @@
     diff /opt/bin/testdata/ldap00.txt -
 for test in 01 02 03 04 05 06 07 08 ; do
     echo $test
+    /opt/bin/set_etd_done.py -U 4715
     /opt/bin/testdriver.py -A $test update
     /opt/bin/testdriver.py wait_for_sync
+    if [ $test = 07 ] ; then
+        sleep 3
+    fi
     ( /opt/bin/ldaptest.py -2 iter | diff /opt/bin/testdata/ldap$test.txt - ) \
         || break
     /opt/bin/set_etd_done.py

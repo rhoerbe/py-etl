@@ -23,13 +23,22 @@ class LDAP_Access (object) :
         """ Get entries marked deleted and set etdTimestamp to
             etlTimestamp
         """
-        r = self.ldcon.search \
-            ( base_dn, '(idnDeleted=*)'
-            , search_scope = SUBTREE
-            , attributes   = ALL_ATTRIBUTES
-            )
+        if self.args.uniqueid :
+            r = self.ldcon.search \
+                ( base_dn, '(phonlineUniqueId=%s)' % self.args.uniqueid
+                , search_scope = SUBTREE
+                , attributes   = ALL_ATTRIBUTES
+                )
+        else :
+            r = self.ldcon.search \
+                ( base_dn, '(idnDeleted=*)'
+                , search_scope = SUBTREE
+                , attributes   = ALL_ATTRIBUTES
+                )
         if r :
             for ldrec in self.ldcon.response [:] :
+                if 'ph15' in ldrec ['dn'] :
+                    continue
                 attr = ldrec ['attributes']
                 if 'etlTimestamp' not in attr :
                     print ("No etlTimestamp: %s" % ldrec ['dn'])
@@ -67,6 +76,10 @@ def main () :
         ( '-u', '--uri'
         , help    = "LDAP uri, default=%(default)s"
         , default = default_ldap
+        )
+    cmd.add_argument \
+        ( '-U', '--uniqueid'
+        , help    = "pk_uniquid for record to mark"
         )
     cmd.add_argument \
         ( "-B", "--bind-dn"
