@@ -1,5 +1,6 @@
 #!/bin/sh -e
 
+/opt/bin/ph15_email.py -t -d ou=user,ou=ph08,o=BMUKK -d ou=user,ou=ph15,o=BMUKK
 /opt/bin/ldaptest.py --base-dn2 o=BMUKK -2 iter | \
     diff /opt/bin/testdata/ldapII.txt -
 /opt/bin/testdriver.py -A 4731 -A 4732 deluids

@@ -7,6 +7,7 @@
     -d ou=user,ou=ph15,o=BMUKK initial_load
 ./etl.py -c postgres -i 00000000000000000000000000000000 -f -t \
     -d ou=user,ou=ph08,o=BMUKK initial_load
+./ph15_email.py -t -d ou=user,ou=ph08,o=BMUKK -d ou=user,ou=ph15,o=BMUKK
 ./ldaptest.py --base-dn2 o=BMUKK -2 iter | diff testdata/ldapII.txt -
 ./testdriver.py -A 4731 -A 4732 deluids
 ./etl.py -c postgres -i 00000000000000000000000000000000 -t \

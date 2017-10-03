@@ -331,6 +331,12 @@ class ODBC_Connector (object) :
         , 'phonlineStudentAktiv'
         )
 
+    not_synced_ph15 = dict \
+        ( emailadresse_st = True
+        )
+
+    ph15_writethrough = ('vorname', 'nachname', 'emailadresse_st')
+
     def __init__ (self, args) :
         self.args      = args
         # FIXME: Poor-mans logger for now
@@ -374,6 +380,13 @@ class ODBC_Connector (object) :
         self.ph15_change_dn = {}
     # end def __init__
 
+    @property
+    def is_ph15 (self) :
+        if 'ph15' in self.dn :
+            return True
+        return False
+    # end def is_ph15
+
     def action (self) :
         if self.args.action == 'initial_load' :
             self.initial_load ()
@@ -390,7 +403,7 @@ class ODBC_Connector (object) :
                         self.verbose ("connected.")
                     except Exception as cause :
                         raise (ApplicationError (cause))
-                    if 'ph15' not in self.dn :
+                    if not self.is_ph15 :
                         self.garbage_collect ()
                     self.etl ()
                     self.cursor.close ()
@@ -463,7 +476,7 @@ class ODBC_Connector (object) :
         entries = self.ldap.get_entries (uid) [:]
         for ldrec in entries :
             dn = ldrec ['dn']
-            if 'ph15' in self.dn or self.db in self.args.no_etd :
+            if self.is_ph15 or self.db in self.args.no_etd :
                 r = self.ldap.delete (dn)
                 self.verbose ("Deleting record: %s" % dn)
                 if not r :
@@ -514,7 +527,7 @@ class ODBC_Connector (object) :
             If so we must delete it in ph15.
         """
         m   = []
-        if 'ph15' not in self.dn :
+        if not self.is_ph15 :
             for ldrec in entries :
                 cn = ldrec ['attributes']['cn']
                 if isinstance (cn, type ([])) :
@@ -750,7 +763,7 @@ class ODBC_Connector (object) :
         """ Special case for ph15: We process the triggers of changed CNs
             for other databases
         """
-        if 'ph15' in self.dn and self.ph15_change_dn :
+        if self.is_ph15 and self.ph15_change_dn :
             sql = 'select %s from %s where benutzername in (?, ?)'
             sql = sql % (','.join (self.fields [self.table]), self.table)
             for oldcn in self.ph15_change_dn :
@@ -983,6 +996,8 @@ class ODBC_Connector (object) :
                 self.log.warn ("Resurrecting: %s" % ldrec ['dn'])
                 ld_delete ['idnDeleted'] = None
             for k in rw :
+                if self.is_ph15 and k in self.not_synced_ph15 :
+                    continue
                 v  = self.to_ldap (rw [k], k)
                 lk = self.odbc_to_ldap_field [k]
                 lv = ldrec ['attributes'].get (lk, None)
@@ -1031,7 +1046,7 @@ class ODBC_Connector (object) :
                 self.verbose ("Change password for dn: %s" % dn)
                 self.ldap.extend.standard.modify_password \
                     (dn, new_password = rw ['passwort'].encode ('utf-8'))
-            for ph15k in 'vorname', 'nachname', 'emailadresse_st' :
+            for ph15k in self.ph15_writethrough :
                 if self.odbc_to_ldap_field [ph15k] in ld_update :
                     ph15changes [ph15k] = True
             if ph15changes :
@@ -1104,7 +1119,7 @@ class ODBC_Connector (object) :
         if self.args.action != 'etl' :
             return
         # If we're working on ph15 now or no ph15: nothing to do
-        if not self.ph15dn or 'ph15' in self.dn :
+        if not self.ph15dn or self.is_ph15 :
             return
         ldrec = self.ldap.get_by_cn (cn, self.dn15)
         # If record doesn't exist in ph15 we do nothing
@@ -1122,7 +1137,6 @@ class ODBC_Connector (object) :
                 v = self.to_ldap (password, 'passwort')
                 changes ['idnDistributionPassword'] = (MODIFY_REPLACE, v)
             else :
-                changes 
                 v  = self.to_ldap (rw [k], k)
                 # Don't delete attribute in ph15
                 if v is None :
@@ -1156,7 +1170,7 @@ class ODBC_Connector (object) :
         if self.args.action != 'etl' :
             return
         # If we're working on ph15 now or no ph15: nothing to do
-        if not self.ph15dn or 'ph15' in self.dn :
+        if not self.ph15dn or self.is_ph15 :
             return
         # FIXME: If we ever enable this again, this should use
         # get_entries and be aware that there may be more than one
