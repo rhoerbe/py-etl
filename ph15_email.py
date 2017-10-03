@@ -94,6 +94,7 @@ class LDAP_Access (object) :
         for dn in self.args.base_dn :
             if 'ph15' in dn :
                 continue
+            self.log.info ("BASE-DN: %s" % dn)
             r = self.ldcon.search \
                 ( dn, '(&(phonlineEmailStudent=*)(phonlineStudentAktiv=J))'
                 , search_scope = SUBTREE
@@ -143,6 +144,10 @@ class LDAP_Access (object) :
                         % self.result
                         )
                     self.log.error (msg + "DN=%s" % d15)
+        self.log.info ("SUCCESS")
+        if not self.args.terminate :
+            while True :
+                time.sleep (60)
     # end def sync_stud_emails
 # end class LDAP_Access
 
