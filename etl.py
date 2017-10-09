@@ -1150,6 +1150,8 @@ class ODBC_Connector (object) :
                     changes [lk] = (MODIFY_REPLACE, v)
                 else :
                     changes [lk] = (MODIFY_REPLACE, [v])
+        if not changes :
+            return
         r = self.ldap.modify (dn, changes)
         if not r :
             msg = \
