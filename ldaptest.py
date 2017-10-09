@@ -185,6 +185,13 @@ compare_ignore = set \
      , 'etlTimestamp'
      , 'idnDistributionPassword'
      , 'userPassword'
+     , 'patchlevel'
+    ))
+
+iter_ignore = set \
+    (( 'patchlevel'
+     , 'etlTimestamp'
+     , 'etdTimestamp'
     ))
 
 def main () :
@@ -281,7 +288,7 @@ def main () :
         for x in ld.iter () :
             print (x ['dn'], end = ' ')
             for k in sorted (x ['attributes'].keys ()) :
-                if k == 'etlTimestamp' or k == 'etdTimestamp' :
+                if k in iter_ignore :
                     continue
                 v = x ['attributes'][k]
                 if k == 'userPassword' :
