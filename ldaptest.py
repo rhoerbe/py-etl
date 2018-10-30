@@ -6,7 +6,7 @@ from argparse  import ArgumentParser
 from getpass   import getpass
 import sys
 import os
-
+"""Matthias Kasper Diesen Kommentar löschen."""
 class LDAP_Access (object) :
 
     attributes = \
