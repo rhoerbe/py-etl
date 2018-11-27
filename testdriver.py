@@ -4,6 +4,7 @@ import os
 import pyodbc
 import sys
 import time
+import pdb
 from argparse import ArgumentParser
 from csv import DictReader
 
@@ -90,7 +91,7 @@ class ODBC_Connector (object) :
     # end def cmd_deluids
 
     def cmd_initial_load (self) :
-        import pdb; pdb.set_trace()
+        pdb.set_trace()
         self.drop_tables ()
         self.create_tables ()
         self.load_initial_testdata ()
