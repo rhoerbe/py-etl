@@ -1,11 +1,12 @@
 #!/usr/bin/python3
 
-import sys
 import os
-import time
 import pyodbc
-from   argparse import ArgumentParser
-from   csv      import DictReader
+import sys
+import time
+from argparse import ArgumentParser
+from csv import DictReader
+
 
 class ODBC_Connector (object) :
 
@@ -89,6 +90,7 @@ class ODBC_Connector (object) :
     # end def cmd_deluids
 
     def cmd_initial_load (self) :
+        import pdb; pdb.set_trace()
         self.drop_tables ()
         self.create_tables ()
         self.load_initial_testdata ()
@@ -126,6 +128,8 @@ class ODBC_Connector (object) :
     def create_tables (self) :
         """ Create the tables in the given database
         """
+        import pdb;
+        pdb.set_trace()
         for tbl in self.fields :
             f   = self.fields [tbl]
             p   = self.primary_key [tbl]
@@ -161,6 +165,8 @@ class ODBC_Connector (object) :
     # end def delete_records
 
     def drop_tables (self) :
+        import pdb;
+        pdb.set_trace()
         for tbl in self.fields :
             sql = 'drop table %s' % tbl
             try :
